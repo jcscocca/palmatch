@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useOwnedStore } from '../state/owned.ts'
 import { useWorkbenchStore } from '../state/store.ts'
 import { useDataset } from './dataset-context.ts'
+import { ImportPanel } from './ImportPanel.tsx'
 import { ResultTabs } from './panels/ResultTabs.tsx'
 import { SearchPalette } from './SearchPalette.tsx'
 import { Slot } from './Slot.tsx'
@@ -16,12 +18,23 @@ function isTyping(target: EventTarget | null): boolean {
   )
 }
 
-export function Workbench() {
+export interface WorkbenchProps {
+  /**
+   * The blob from a `#/own/<blob>` link, handed down by `App` from `bindUrl`. Non-null opens the
+   * import panel on its confirm step; `onShareHandled` fires when that panel closes, so the same
+   * link can't re-open it on the next render.
+   */
+  shareBlob?: string | null
+  onShareHandled?: () => void
+}
+
+export function Workbench({ shareBlob = null, onShareHandled }: WorkbenchProps) {
   const ds = useDataset()
   const slotA = useWorkbenchStore((s) => s.slotA)
   const slotB = useWorkbenchStore((s) => s.slotB)
   const target = useWorkbenchStore((s) => s.target)
   const setSlot = useWorkbenchStore((s) => s.setSlot)
+  const bySpecies = useOwnedStore((s) => s.bySpecies)
 
   const [palette, setPalette] = useState<{ open: boolean; forSlot: 'a' | 'b' | 't' | null }>({
     open: false,
@@ -30,15 +43,25 @@ export function Workbench() {
   const openPalette = useCallback((forSlot: 'a' | 'b' | 't' | null) => setPalette({ open: true, forSlot }), [])
   const closePalette = useCallback(() => setPalette({ open: false, forSlot: null }), [])
 
+  const [importOpen, setImportOpen] = useState(false)
+  useEffect(() => {
+    if (shareBlob !== null) setImportOpen(true)
+  }, [shareBlob])
+  const closeImport = useCallback(() => {
+    setImportOpen(false)
+    onShareHandled?.()
+  }, [onShareHandled])
+
   const paletteOpen = palette.open
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent): void => {
       if (e.key === 'Escape') {
         if (paletteOpen) closePalette()
+        if (importOpen) closeImport()
         return
       }
-      // While the palette is up it owns the keyboard — no reopening, no shortcut handling behind it.
-      if (paletteOpen || isTyping(e.target)) return
+      // While a modal is up it owns the keyboard — no reopening, no shortcut handling behind it.
+      if (paletteOpen || importOpen || isTyping(e.target)) return
       const shortcut = e.key === '/' || ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K'))
       if (!shortcut) return
       e.preventDefault()
@@ -46,9 +69,10 @@ export function Workbench() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [closePalette, openPalette, paletteOpen, slotA, slotB])
+  }, [closeImport, closePalette, importOpen, openPalette, paletteOpen, slotA, slotB])
 
   const { palcalcCommit, gameVersion, refreshedAt } = ds.version
+  const ownedSpecies = Object.keys(bySpecies).length
 
   return (
     <div className="app">
@@ -61,6 +85,13 @@ export function Workbench() {
         </h1>
         <div className="header-right">
           <span className="label-caps">DATA {gameVersion}</span>
+          <button
+            type="button"
+            className={`search-btn${ownedSpecies > 0 ? ' search-btn-on' : ''}`}
+            onClick={() => setImportOpen(true)}
+          >
+            MY PALS{ownedSpecies > 0 ? ` · ${ownedSpecies}` : ''}
+          </button>
           <button type="button" className="search-btn" onClick={() => openPalette(null)}>
             SEARCH PALS <kbd>/</kbd>
           </button>
@@ -109,6 +140,7 @@ export function Workbench() {
 
       {/* Mounted only while open so each opening starts from a blank query and filters. */}
       {palette.open && <SearchPalette forSlot={palette.forSlot} onClose={closePalette} />}
+      {importOpen && <ImportPanel shareBlob={shareBlob} onClose={closeImport} />}
     </div>
   )
 }

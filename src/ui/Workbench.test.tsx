@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { loadDatasetFromDisk } from '../engine/dataset.ts'
 import type { Dataset } from '../engine/types.ts'
+import { useOwnedStore } from '../state/owned.ts'
 import { useWorkbenchStore } from '../state/store.ts'
 import { DatasetContext } from './dataset-context.ts'
 import { Workbench } from './Workbench.tsx'
@@ -14,6 +15,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   useWorkbenchStore.getState().clearAll()
+  useOwnedStore.getState().clearOwned()
 })
 
 afterEach(cleanup)
@@ -80,6 +82,18 @@ describe('Workbench keyboard shortcuts', () => {
     input.remove()
   })
 
+  it('the import panel takes the keyboard from the palette shortcuts while it is open', () => {
+    renderWorkbench()
+    fireEvent.click(screen.getByText('MY PALS'))
+    expect(screen.queryByLabelText('my pals')).not.toBeNull()
+
+    fireEvent.keyDown(window, { key: '/' })
+    expect(palette()).toBeNull()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByLabelText('my pals')).toBeNull()
+  })
+
   it('the open palette owns the keyboard: typing an ordinary letter into its input does not close or reopen it', () => {
     renderWorkbench()
     fireEvent.keyDown(window, { key: '/' })
@@ -92,5 +106,36 @@ describe('Workbench keyboard shortcuts', () => {
     fireEvent.keyDown(input, { key: '/' })
 
     expect(screen.getAllByLabelText('search pals')).toHaveLength(1)
+  })
+})
+
+describe('MY PALS header button', () => {
+  it('opens the import panel', () => {
+    renderWorkbench()
+    expect(screen.queryByLabelText('my pals')).toBeNull()
+    fireEvent.click(screen.getByText('MY PALS'))
+    expect(screen.queryByLabelText('my pals')).not.toBeNull()
+  })
+
+  it('carries the owned species count once a list exists', () => {
+    useOwnedStore.getState().loadShared(
+      [
+        [1, 4],
+        [2, 1],
+      ],
+      'shared list',
+    )
+    renderWorkbench()
+    expect(screen.getByText('MY PALS · 2')).toBeTruthy()
+  })
+
+  it('opens straight onto the confirm step for a #/own/ share link', () => {
+    render(
+      <DatasetContext value={ds}>
+        <Workbench shareBlob="not-a-real-blob" />
+      </DatasetContext>,
+    )
+    expect(screen.queryByLabelText('my pals')).not.toBeNull()
+    expect(screen.getByText(/shared list is damaged/)).toBeTruthy()
   })
 })

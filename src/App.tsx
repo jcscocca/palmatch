@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { loadDataset } from './engine/dataset.ts'
 import type { Dataset } from './engine/types.ts'
 import { useWorkbenchStore } from './state/store.ts'
@@ -13,6 +13,8 @@ type LoadState = { status: 'loading' } | { status: 'error'; message: string } | 
 function App() {
   const [state, setState] = useState<LoadState>({ status: 'loading' })
   const [attempt, setAttempt] = useState(0)
+  // A `#/own/<blob>` link, held here only until the import panel has shown its confirm step.
+  const [shareBlob, setShareBlob] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -31,6 +33,7 @@ function App() {
   }, [attempt])
 
   const { toasts, onWarnings, dismiss } = useUrlWarningToasts()
+  const clearShare = useCallback(() => setShareBlob(null), [])
 
   // Bound once the dataset exists — the URL codec needs `pals`/`byId` to resolve ids. An unknown
   // pal id in the hash (a stale/hand-typed link) surfaces here as a dismissible toast rather than
@@ -38,7 +41,7 @@ function App() {
   const ds = state.status === 'ready' ? state.ds : null
   useEffect(() => {
     if (ds === null) return
-    return bindUrl(useWorkbenchStore, ds.pals, ds.byId, onWarnings)
+    return bindUrl(useWorkbenchStore, ds.pals, ds.byId, onWarnings, setShareBlob)
   }, [ds, onWarnings])
 
   if (state.status === 'loading') {
@@ -68,7 +71,7 @@ function App() {
 
   return (
     <DatasetContext value={state.ds}>
-      <Workbench />
+      <Workbench shareBlob={shareBlob} onShareHandled={clearShare} />
       <Toasts toasts={toasts} onDismiss={dismiss} />
     </DatasetContext>
   )

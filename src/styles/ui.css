@@ -69,6 +69,13 @@ button {
   color: var(--accent);
 }
 
+/* MY PALS once a list exists: the header's one piece of standing state. */
+.search-btn-on {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
 .search-btn kbd {
   padding: 0 5px;
   border: 2px solid var(--border);
@@ -904,6 +911,205 @@ button {
   letter-spacing: 1px;
 }
 
+/* ---- import panel (MY PALS) ---- */
+
+/*
+ * Shares `.palette-dialog` for the modal shell (fixed overlay + backdrop) and only differs in the
+ * box: wider than the search palette, because the species grid needs the room.
+ */
+.import-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 680px;
+  max-height: 84vh;
+  padding: 12px;
+  border: 2px solid var(--accent);
+  background: var(--surface);
+  box-shadow: 6px 6px 0 #000;
+  overflow-y: auto;
+}
+
+.import-empty,
+.import-error,
+.import-confirm,
+.import-choose,
+.owned-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.import-parsing {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 28px 12px;
+}
+
+.drop-zone {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 28px 16px;
+  border: 2px dashed var(--border);
+  background: var(--surface-alt);
+  text-align: center;
+}
+
+.drop-zone-over {
+  border-color: var(--accent);
+  border-style: solid;
+  background: var(--accent-bg);
+}
+
+.drop-line {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+
+.drop-line strong {
+  color: var(--accent);
+}
+
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Buttons and the file-input's label share one chrome; the label is a button in every way but tag. */
+.file-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 12px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+
+.file-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Off-screen but still focusable, so the file input keeps its place in the tab order. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.path-hints ul {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.9;
+}
+
+.path-hints code {
+  color: var(--text);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.path-hints summary {
+  cursor: pointer;
+}
+
+.import-message {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.import-error .import-message {
+  color: var(--accent);
+}
+
+.import-warnings {
+  margin: 0;
+  padding: 0 0 0 16px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.save-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.save-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 2px solid var(--border);
+  background: var(--surface-alt);
+  font-size: 12px;
+  text-align: left;
+}
+
+.save-btn:hover {
+  border-color: var(--accent);
+}
+
+.save-path {
+  word-break: break-all;
+}
+
+.owned-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.owned-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px 4px 4px;
+  background: var(--surface-alt);
+}
+
+.owned-count {
+  flex: none;
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.share-note {
+  margin: 0;
+  color: var(--accent);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
 /* ---- url warning toasts ---- */
 
 .toast-stack {
@@ -1064,6 +1270,14 @@ button {
 
   .palette-keys {
     display: none;
+  }
+
+  .import-panel {
+    max-height: 88vh;
+  }
+
+  .owned-grid {
+    grid-template-columns: 1fr;
   }
 
   .panel {

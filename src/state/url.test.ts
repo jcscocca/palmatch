@@ -101,6 +101,25 @@ describe('parseHash edge cases', () => {
     expect(warnings.length).toBeGreaterThan(0)
   })
 
+  it('parses an owned-share route into the blob, leaving the workbench state empty', () => {
+    const { state, warnings, ownShare } = parseHash('#/own/eJx-_AbC123', BY_ID)
+    expect(state).toEqual(EMPTY)
+    expect(warnings).toEqual([])
+    expect(ownShare).toBe('eJx-_AbC123')
+  })
+
+  it('treats an owned-share route with no blob as malformed, with no ownShare to act on', () => {
+    const { state, warnings, ownShare } = parseHash('#/own/', BY_ID)
+    expect(state).toEqual(EMPTY)
+    expect(warnings.length).toBeGreaterThan(0)
+    expect(ownShare).toBeUndefined()
+  })
+
+  it('leaves ownShare unset on every ordinary route', () => {
+    expect(parseHash('#/c/foxparks~grizzbolt', BY_ID).ownShare).toBeUndefined()
+    expect(parseHash('#/', BY_ID).ownShare).toBeUndefined()
+  })
+
   it('does not let a length-changing uppercase fold (ß -> "SS") misalign the chain-separator split', () => {
     // Regression: the separator search used to run on rest.toUpperCase() but slice the original
     // string. toUpperCase() isn't length-preserving for every character - "ß".toUpperCase() ===
@@ -275,6 +294,23 @@ describe('bindUrl', () => {
     fireHashChange('#/b/ghostpal+bristla')
     expect(store.getState()).toMatchObject({ slotA: 1, slotB: null, target: null })
     expect(window.location.hash).toBe('#/a/bristla')
+    unbind()
+  })
+
+  it('hands a #/own/ blob to onOwnShare and canonicalizes the route out of the address bar', () => {
+    window.location.hash = '#/own/Q3VkZGxlbXV0dA'
+    const store = createWorkbenchStore()
+    const seen: string[] = []
+    const unbind = bindUrl(store, PALS, BY_ID, undefined, (blob) => seen.push(blob))
+
+    expect(seen).toEqual(['Q3VkZGxlbXV0dA'])
+    // The list is not workbench state: the hash goes back to empty, so back/forward and a reload
+    // can't re-import it behind the player's back.
+    expect(window.location.hash).toBe('#/')
+    expect(store.getState()).toMatchObject({ slotA: null, slotB: null, target: null })
+
+    fireHashChange('#/a/bristla')
+    expect(seen).toEqual(['Q3VkZGxlbXV0dA'])
     unbind()
   })
 })

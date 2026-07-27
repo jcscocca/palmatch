@@ -21,6 +21,12 @@ const EMPTY_STATE: UrlState = { slotA: null, slotB: null, target: null, tab: nul
 export interface ParseResult {
   state: UrlState
   warnings: string[]
+  /**
+   * The blob from a `#/own/<blob>` owned-list share link. Deliberately not part of `UrlState`: it
+   * is a one-shot delivery, not synced state — `bindUrl` hands it to a callback once and then
+   * canonicalizes the route away, so the address bar never keeps a 200-species payload in it.
+   */
+  ownShare?: string
 }
 
 function idOf(pals: PalRecord[], index: number): string {
@@ -146,6 +152,14 @@ export function parseHash(hash: string, byId: Map<string, number>): ParseResult 
   const rest = parts[2]
   const lower = buildLowerLookup(byId)
 
+  // An owned-list share carries no workbench state at all, so it parses to the empty state plus
+  // the blob. The base64url alphabet holds no `@`, `+`, `~` or `/`, so the rest of the grammar
+  // above can't have chewed a piece off it before we get here.
+  if (route === 'own') {
+    if (rest === '') return malformed()
+    return { state: { ...EMPTY_STATE }, warnings, ownShare: rest }
+  }
+
   if (route === 'a') {
     if (rest === '') return malformed()
     const slotA = resolve(lower, rest, warnings)
@@ -193,12 +207,18 @@ export function parseHash(hash: string, byId: Map<string, number>): ParseResult 
  *
  * `onWarnings`, if given, is invoked with every `parseHash` result (including an empty array on a
  * clean parse) - Task 8 wires it to a toast ("unknown pal 'xyz' cleared from link").
+ *
+ * `onOwnShare` is the one-shot half: a `#/own/<blob>` link fires it exactly once with the blob and
+ * is then canonicalized out of the address bar by the same self-healing write every other
+ * non-canonical route gets. The owned list itself never enters this sync loop - it is not workbench
+ * state, and a link that re-imported it on every back/forward would be a trap.
  */
 export function bindUrl(
   store: UseBoundStore<StoreApi<WorkbenchState>>,
   pals: PalRecord[],
   byId: Map<string, number>,
   onWarnings?: (warnings: string[]) => void,
+  onOwnShare?: (blob: string) => void,
 ): () => void {
   let applyingFromHash = false
   // Guards against a hypothetical environment where `history.replaceState` synchronously
@@ -208,7 +228,7 @@ export function bindUrl(
 
   const syncFromHash = (): void => {
     if (applyingToHash) return
-    const { state, warnings } = parseHash(window.location.hash, byId)
+    const { state, warnings, ownShare } = parseHash(window.location.hash, byId)
     onWarnings?.(warnings)
     // parseHash resolves each id independently, so an unknown *first* id (e.g. `#/b/ghostpal
     // +bristla`) can hand back the forbidden {slotA: null, slotB: <index>} shape - parseHash
@@ -222,6 +242,9 @@ export function bindUrl(
     } finally {
       applyingFromHash = false
     }
+    // After the store write, so the panel this opens is mounted over a workbench that has already
+    // settled into the state the link asked for (an owned-share link asks for the empty one).
+    if (ownShare !== undefined) onOwnShare?.(ownShare)
     // Whatever just got parsed may not have been canonical - an unknown id nulling a slot, a
     // legacy/mangled chain separator, a lone-B shape from a hand-typed link - so re-derive the
     // hash from the (now-normalized) store and rewrite the address bar to match immediately.
