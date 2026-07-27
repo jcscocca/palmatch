@@ -5,8 +5,9 @@ import type { ChainStep, Dataset } from './types.ts'
  * Extra cost the relaxation is allowed to explore past `maxDepth`. Cost double-counts shared
  * subtrees while the emitted steps dedupe them, so a chain worth keeping can be scored a little
  * over budget; the reconstructed step count is what the answer is finally judged against.
+ * Empirically saturates at 4 on this dataset (slack 4 and 8 find identical result sets).
  */
-const COST_SLACK = 2
+const COST_SLACK = 4
 
 /**
  * Children of `a` x `b`: the matrix cell, or — for the one pair whose cell is the sentinel — both
@@ -25,7 +26,10 @@ function childrenOf(ds: Dataset, a: number, b: number): number[] {
  * Cost relaxation over species space, for a player who owns several pals and will only breed what
  * they already own. Cost is total breeds, so a pal whose parents cost 1 and 2 costs 4. Shared
  * subtrees are double-counted by that sum; the greedy tradeoff keeps the relaxation a single pass
- * per round and matches what other breeding calculators report.
+ * per round and matches what other breeding calculators report. Because only one `via` route is
+ * kept per pal (minimizing the greedy sum, not the deduped step count), a route with a higher sum
+ * but better subtree sharing is never reconstructed — rarely, a target performable within
+ * `maxDepth` real breeds is reported unreachable at any slack.
  */
 function setGrowth(ds: Dataset, starters: number[], target: number, maxDepth: number): ChainStep[] | null {
   const n = ds.pals.length
