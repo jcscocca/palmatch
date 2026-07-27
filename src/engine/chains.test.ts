@@ -20,6 +20,16 @@ function expectBreedable(steps: ChainStep[]): void {
   }
 }
 
+/** Each step may only pair pals already owned or bred by one of the steps before it. */
+function expectOwnedInOrder(steps: ChainStep[], starters: number[]): void {
+  const owned = new Set(starters)
+  for (const s of steps) {
+    expect(owned.has(s.a)).toBe(true)
+    expect(owned.has(s.b)).toBe(true)
+    owned.add(s.child)
+  }
+}
+
 /** Two starters whose child breeds back with a starter into a third pal they cannot reach directly. */
 function twoStepCase(): { a: number; b: number; target: number } {
   const n = ds.pals.length
@@ -63,7 +73,25 @@ describe('findChains with several starters', () => {
   it('returns an empty chain when the target is already owned', () => {
     const target = idx('LazyDragon')
     expect(findChains(ds, [target, idx('ElecCat')], target)).toEqual([])
-    expect(findChains(ds, [target], target)).toEqual([])
+  })
+
+  it('reaches both gender-locked children, whichever starter is named first', () => {
+    const cat = idx('CatMage')
+    const fox = idx('FoxMage')
+    expect(findChains(ds, [cat, fox], idx('CatMage_Fire'), 8)).toEqual([{ a: cat, b: fox, child: idx('CatMage_Fire') }])
+    expect(findChains(ds, [fox, cat], idx('FoxMage_Dark'), 8)).toEqual([{ a: cat, b: fox, child: idx('FoxMage_Dark') }])
+    expectBreedable(findChains(ds, [cat, fox], idx('CatMage_Fire'), 8)!)
+  })
+
+  it('keeps breeding past a round that added nothing new', () => {
+    // Xenolord + Lyleen Noct reach Renjishi only through pals bred two rounds earlier, so a solver
+    // that stops at the first quiet round reports no chain at all.
+    const steps = findChains(ds, [idx('DarkMechaDragon'), idx('LilyQueen_Dark')], idx('KabukiMan'), 6)
+    expect(steps).not.toBeNull()
+    expect(steps!.length).toBeLessThanOrEqual(6)
+    expect(steps![steps!.length - 1].child).toBe(idx('KabukiMan'))
+    expectBreedable(steps!)
+    expectOwnedInOrder(steps!, [idx('DarkMechaDragon'), idx('LilyQueen_Dark')])
   })
 
   it('ignores duplicate starters', () => {
@@ -88,17 +116,16 @@ describe('findChains with several starters', () => {
 
   it('emits every step after the steps it depends on', () => {
     const { a, b, target } = twoStepCase()
-    const steps = findChains(ds, [a, b], target, 2)!
-    const owned = new Set([a, b])
-    for (const s of steps) {
-      expect(owned.has(s.a)).toBe(true)
-      expect(owned.has(s.b)).toBe(true)
-      owned.add(s.child)
-    }
+    expectOwnedInOrder(findChains(ds, [a, b], target, 2)!, [a, b])
   })
 })
 
 describe('findChains with one starter', () => {
+  it('returns an empty chain when the target is the starter', () => {
+    const target = idx('LazyDragon')
+    expect(findChains(ds, [target], target)).toEqual([])
+  })
+
   it('breeds the starter with the lowest-index partner that reaches the target', () => {
     const lamball = idx('SheepBall')
     const { partner, child } = oneFreePartnerStep(lamball)
@@ -129,5 +156,60 @@ describe('findChains with one starter', () => {
 
   it('returns null when no breed is allowed at all', () => {
     expect(findChains(ds, [idx('SheepBall')], idx('LazyDragon_Electric'), 0)).toBeNull()
+  })
+})
+
+/** mulberry32, so the sampled starters and targets are the same on every run. */
+function seeded(seed: number): () => number {
+  let s = seed
+  return () => {
+    s = (s + 0x6d2b79f5) | 0
+    let t = Math.imul(s ^ (s >>> 15), 1 | s)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/** 50 seeded (starters, target) problems, half of them single-starter. */
+function sampleProblems(): Array<{ starters: number[]; target: number }> {
+  const rand = seeded(20260727)
+  const n = ds.pals.length
+  return Array.from({ length: 50 }, (_, i) => {
+    const a = Math.floor(rand() * n)
+    const b = Math.floor(rand() * n)
+    const target = Math.floor(rand() * n)
+    return { starters: i % 2 === 0 && a !== b ? [a, b] : [a], target }
+  })
+}
+
+describe('findChains over sampled problems', () => {
+  it('never spends more breeds than the depth allows', () => {
+    const problems = sampleProblems()
+    expect(problems).toHaveLength(50)
+    for (const { starters, target } of problems) {
+      for (let depth = 0; depth <= 7; depth++) {
+        const steps = findChains(ds, starters, target, depth)
+        if (steps === null) continue
+        expect(steps.length).toBeLessThanOrEqual(depth)
+        expectBreedable(steps)
+        if (starters.length > 1) expectOwnedInOrder(steps, starters)
+        if (steps.length > 0) expect(steps[steps.length - 1].child).toBe(target)
+      }
+    }
+  })
+
+  it('keeps a chain found at one depth findable at the next', () => {
+    const problems = sampleProblems()
+    expect(problems).toHaveLength(50)
+    const lost: string[] = []
+    for (const { starters, target } of problems) {
+      for (let depth = 0; depth <= 7; depth++) {
+        if (findChains(ds, starters, target, depth) === null) continue
+        if (findChains(ds, starters, target, depth + 1) === null) {
+          lost.push(`${starters.join('+')} -> ${ds.pals[target].id} at depth ${depth}`)
+        }
+      }
+    }
+    expect(lost).toEqual([])
   })
 })

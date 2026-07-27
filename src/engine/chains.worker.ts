@@ -15,12 +15,14 @@ let dataset: Promise<Dataset> | undefined
 
 async function run(req: ChainRequest): Promise<void> {
   try {
-    dataset ??= loadDataset(import.meta.env.BASE_URL ?? '')
+    dataset ??= loadDataset(import.meta.env.BASE_URL)
     const ds = await dataset
-    ctx.postMessage({ steps: findChains(ds, req.starters, req.target, req.maxDepth) })
+    const steps = findChains(ds, req.starters, req.target, req.maxDepth)
+    ctx.postMessage({ ok: true, requestId: req.requestId, steps })
   } catch (cause) {
     dataset = undefined
-    ctx.postMessage({ error: cause instanceof Error ? cause.message : String(cause) })
+    const error = cause instanceof Error ? cause.message : String(cause)
+    ctx.postMessage({ ok: false, requestId: req.requestId, error })
   }
 }
 

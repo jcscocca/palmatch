@@ -9,7 +9,7 @@ const RANK_ORDER = new WeakMap<Dataset, number[]>()
  * Every pal, sorted by rank. Equal ranks put the higher-priority pal first, which is the one a
  * rank resolves to, so a rank group's first entry is its representative.
  */
-function eligibleByRank(ds: Dataset): number[] {
+function palsByRank(ds: Dataset): number[] {
   let sorted = RANK_ORDER.get(ds)
   if (sorted === undefined) {
     sorted = ds.pals
@@ -21,7 +21,7 @@ function eligibleByRank(ds: Dataset): number[] {
 }
 
 /** First position in `eligible` whose rank is at least `r`. */
-function lowerBound(eligible: number[], ds: Dataset, r: number): number {
+function lowerBound(ds: Dataset, eligible: number[], r: number): number {
   let lo = 0
   let hi = eligible.length
   while (lo < hi) {
@@ -33,17 +33,17 @@ function lowerBound(eligible: number[], ds: Dataset, r: number): number {
 }
 
 /** Walks back to the representative of the rank group holding position `i`. */
-function groupStart(eligible: number[], ds: Dataset, i: number): number {
+function groupStart(ds: Dataset, eligible: number[], i: number): number {
   const power = ds.pals[eligible[i]].power
   while (i > 0 && ds.pals[eligible[i - 1]].power === power) i--
   return i
 }
 
 /** The pal whose rank is closest to `r`; on a tie the higher-priority side wins, else the stronger. */
-function nearestByRank(eligible: number[], ds: Dataset, r: number): number {
-  const at = lowerBound(eligible, ds, r)
+function nearestByRank(ds: Dataset, eligible: number[], r: number): number {
+  const at = lowerBound(ds, eligible, r)
   const above = at < eligible.length ? eligible[at] : -1
-  const below = at > 0 ? eligible[groupStart(eligible, ds, at - 1)] : -1
+  const below = at > 0 ? eligible[groupStart(ds, eligible, at - 1)] : -1
   if (above < 0) return below
   if (below < 0) return above
   const gapAbove = ds.pals[above].power - r
@@ -60,6 +60,8 @@ function rankWindow(ds: Dataset, a: number, b: number): { lo: number; hi: number
   const lo = Math.min(ra, rb)
   const h = r5(lo * rankCoefficient) + r5(Math.abs(ra - rb) * rankDiffPenalty)
   const p = Math.max(1, r5(lo * randomCoefficient))
+  // Both clamps are defensive floors: today's ranks start at 20, so neither can bite, but a data
+  // refresh introducing a rank-0 pal would otherwise produce an empty window.
   return { lo: Math.max(1, h + 1), hi: h + p }
 }
 
@@ -70,10 +72,10 @@ function rankWindow(ds: Dataset, a: number, b: number): { lo: number; hi: number
  */
 export function mutationPool(ds: Dataset, a: number, b: number): MutationOutcome[] {
   const window = rankWindow(ds, a, b)
-  const eligible = eligibleByRank(ds)
+  const eligible = palsByRank(ds)
   const counts = new Map<number, number>()
   for (let r = window.lo; r <= window.hi; r++) {
-    const child = nearestByRank(eligible, ds, r)
+    const child = nearestByRank(ds, eligible, r)
     counts.set(child, (counts.get(child) ?? 0) + 1)
   }
   const total = [...counts.values()].reduce((s, x) => s + x, 0)
@@ -86,9 +88,9 @@ export function mutationPool(ds: Dataset, a: number, b: number): MutationOutcome
  * tie-break `nearestByRank` applies, so the two never disagree.
  */
 function rankInterval(ds: Dataset, target: number): { lo: number; hi: number } | null {
-  const eligible = eligibleByRank(ds)
+  const eligible = palsByRank(ds)
   const power = ds.pals[target].power
-  const start = groupStart(eligible, ds, eligible.indexOf(target))
+  const start = groupStart(ds, eligible, eligible.indexOf(target))
   if (eligible[start] !== target) return null
 
   let end = start
@@ -96,9 +98,10 @@ function rankInterval(ds: Dataset, target: number): { lo: number; hi: number } |
 
   let lo = 1
   if (start > 0) {
-    const prev = eligible[groupStart(eligible, ds, start - 1)]
+    const prev = eligible[groupStart(ds, eligible, start - 1)]
     const sum = power + ds.pals[prev].power
     const mid = sum >> 1
+    // Same defensive floor as `rankWindow`: rank 0 and below are not ranks.
     lo = Math.max(1, sum % 2 === 0 && ds.pals[target].priority > ds.pals[prev].priority ? mid : mid + 1)
   }
 

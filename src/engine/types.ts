@@ -108,14 +108,17 @@ export interface ChainStep {
   child: number
 }
 
-/** What the chain worker is asked for, and what it answers with. */
+/** What the chain worker is asked for. `requestId` comes back on the answer, so a slow reply is discardable. */
 export interface ChainRequest {
+  requestId: number
   starters: number[]
   target: number
   maxDepth?: number
 }
 
-export type ChainResponse = { steps: ChainStep[] | null } | { error: string }
+export type ChainResponse =
+  | { ok: true; requestId: number; steps: ChainStep[] | null }
+  | { ok: false; requestId: number; error: string }
 
 /** One possible mutation child and its share of the mutation roll. */
 export interface MutationOutcome {
