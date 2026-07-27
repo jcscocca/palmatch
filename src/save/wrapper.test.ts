@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { cnk0, junkFile, levelGvas, plm1, plz1, plz2, truncateTo } from './fixtures/builder.ts'
+import { build, cnk0, junkFile, levelGvas, plm1, plz1, plz2, truncateTo } from './fixtures/builder.ts'
 import type { OozDecompress } from './ooz.ts'
 import { ParseError } from './types.ts'
 import { decompressSave, MAX_DECOMPRESSED_BYTES, sniffWrapper } from './wrapper.ts'
@@ -9,6 +9,16 @@ function patchU32(buffer: ArrayBuffer, offset: number, value: number): ArrayBuff
   const copy = buffer.slice(0)
   new DataView(copy).setUint32(offset, value, true)
   return copy
+}
+
+async function detailOf(promise: Promise<unknown>): Promise<string> {
+  try {
+    await promise
+  } catch (error) {
+    if (error instanceof ParseError) return error.message
+    throw error
+  }
+  throw new Error('expected a ParseError, got a successful parse')
 }
 
 async function codeOf(promise: Promise<unknown>): Promise<string> {
@@ -68,6 +78,24 @@ describe('sniffWrapper', () => {
       throw new Error('expected a throw')
     } catch (error) {
       expect((error as ParseError).code).toBe('too-large')
+    }
+  })
+
+  it('bounds the intermediate length too, since a PlZ2 first pass is budgeted by it', () => {
+    // The adversarial header: a tiny final size to look harmless, 4 GB of intermediate to inflate
+    // into. Nothing may read this far — the rejection has to come out of the sniff itself.
+    const evil = build((w) => {
+      w.u32(4096).u32(0xffffffff)
+      for (const ch of 'PlZ') w.u8(ch.charCodeAt(0))
+      w.u8(0x32)
+      w.zeros(64)
+    })
+    try {
+      sniffWrapper(evil)
+      throw new Error('expected a throw')
+    } catch (error) {
+      expect((error as ParseError).code).toBe('too-large')
+      expect((error as ParseError).message).toMatch(/intermediate/)
     }
   })
 })
@@ -133,13 +161,21 @@ describe('decompressSave', () => {
   it('stops a stream that expands far past its declared length, instead of exhausting the worker', async () => {
     // 64 MB of zeros deflate to a few KB. A one-shot inflate would allocate all of it — and a real
     // bomb, at ~1000:1 on a 500 MB file, would take the tab down before any length check ran.
+    const limit = 4096
     const bomb = plz1(new Uint8Array(64 * 1024 * 1024))
-    const capped = patchU32(bomb, 0, 4096)
+    const capped = patchU32(bomb, 0, limit)
 
     const started = performance.now()
-    expect(await codeOf(decompressSave(capped))).toBe('truncated')
+    const detail = await detailOf(decompressSave(capped))
     expect(performance.now() - started).toBeLessThan(1000)
-    await expect(decompressSave(capped)).rejects.toThrow(/expands past/)
+    expect(await codeOf(decompressSave(capped))).toBe('truncated')
+
+    // Load-bearing: how much it actually let through before giving up. pako emits output in
+    // `chunkSize` blocks and the guard runs on each one, so the overshoot is bounded by a single
+    // block (64 KiB by default) — not by the 64 MB the stream wanted to produce.
+    const stopped = Number(/stopped after (\d+)/.exec(detail)?.[1])
+    expect(stopped).toBeGreaterThan(limit)
+    expect(stopped).toBeLessThanOrEqual(limit + 64 * 1024)
   })
 
   it('rejects a PlM1 whose payload runs off the end of the file', async () => {

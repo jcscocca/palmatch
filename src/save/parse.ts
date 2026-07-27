@@ -37,8 +37,10 @@ export async function parseSave(
 
   const owned: OwnedPal[] = []
   const unknown = new Set<string>()
-  let playerCount = 0
+  const oddTypes = new Set<string>()
+  let nonPalRows = 0
   let palCount = 0
+  let unknownPals = 0
 
   for (let i = 0; i < map.count; i++) {
     // An entry whose value list holds no RawData is a row we can't interpret at all — it counts as
@@ -48,11 +50,13 @@ export async function parseSave(
     if (raw === null) continue
     const fields = readCharacterFields(raw, `CharacterSaveParameterMap[${i}].Value.RawData`)
 
+    for (const odd of fields.oddTypes) oddTypes.add(odd)
+
     // Players share the map with their pals. They are marked `IsPlayer`, and (per PLM's survey of a
     // real world) carry no `CharacterID` at all — treat either as "not a pal" so the counts add up.
     const id = fields.characterId
     if (fields.isPlayer || id === null || id.toLowerCase() === 'none') {
-      playerCount++
+      nonPalRows++
       continue
     }
     palCount++
@@ -60,6 +64,7 @@ export async function parseSave(
     const speciesIndex = resolveSpecies(id, byIdLower)
     if (speciesIndex === null) {
       unknown.add(id)
+      unknownPals++
       continue
     }
     owned.push({
@@ -75,10 +80,34 @@ export async function parseSave(
   cur.path = 'worldSaveData'
   endValue(cur, map.tag)
 
+  const unknownSpecies = [...unknown].sort()
   return {
     owned,
-    unknownSpecies: [...unknown].sort(),
-    playerCount,
+    unknownSpecies,
+    nonPalRows,
     palCount,
+    warnings: buildWarnings(unknownSpecies, unknownPals, [...oddTypes].sort()),
   }
+}
+
+/** Caps the species list so one wildly out-of-date dataset can't produce a wall of text. */
+const WARNING_LIST_MAX = 3
+
+function buildWarnings(unknownSpecies: string[], unknownPals: number, oddTypes: string[]): string[] {
+  const warnings: string[] = []
+
+  if (unknownSpecies.length > 0) {
+    const shown = unknownSpecies.slice(0, WARNING_LIST_MAX).join(', ')
+    const rest = unknownSpecies.length - WARNING_LIST_MAX
+    warnings.push(
+      `left out ${unknownPals} pal${unknownPals === 1 ? '' : 's'} whose species palmatch doesn't know: ${shown}${rest > 0 ? ` and ${rest} more` : ''}`,
+    )
+  }
+
+  if (oddTypes.length > 0) {
+    warnings.push(
+      `this save stores ${oddTypes.join(', ')} in a form palmatch doesn't recognise, so those IVs were left blank`,
+    )
+  }
+  return warnings
 }

@@ -6,9 +6,13 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   base: './',
   plugins: [react()],
-  // Both workers are constructed with `{ type: 'module' }`, but vite still bundles worker entries
-  // as IIFE by default — and an IIFE can hold neither a top-level await nor a lazy import chunk.
-  // ooz-wasm compiles its wasm under a top-level await, so the save-import worker needs ESM output.
+  // Vite bundles worker entries as IIFE by default, and a top-level await cannot live in an IIFE —
+  // ooz-wasm compiles its wasm under one. Nothing reachable from the entry constructs the
+  // save-import worker yet, so today's build never bundles it and this line is not yet exercised;
+  // it becomes required the moment F3 puts the worker in the graph. Verified by temporarily
+  // referencing the worker from main.tsx: without this the build fails with UNSUPPORTED_FEATURE at
+  // ooz-wasm/index.js, with it ooz splits into its own lazy chunk. Both workers are already
+  // constructed with `{ type: 'module' }`, so the call sites need no change either way.
   worker: { format: 'es' },
   test: {
     environment: 'jsdom',

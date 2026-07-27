@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { readCharacterFields, resolveSpecies } from './character.ts'
 import { characterRawData, fromHex, toHex } from './fixtures/builder.ts'
+import { ParseError } from './types.ts'
+
+function codeOf(fn: () => unknown): string {
+  try {
+    fn()
+  } catch (error) {
+    if (error instanceof ParseError) return error.code
+    throw error
+  }
+  throw new Error('expected a ParseError')
+}
 
 /**
  * A `RawData` blob written out by hand from reference §3.3 and §4.2 — not by our builder. It is the
@@ -59,6 +70,7 @@ describe('readCharacterFields on hand-written bytes', () => {
       passives: [],
       talents: { hp: 66, shot: 0, defense: 0 },
       isPlayer: false,
+      oddTypes: [],
     })
   })
 
@@ -81,6 +93,12 @@ describe('readCharacterFields', () => {
 
   it('says nothing rather than zero when the save carries no IVs at all', () => {
     expect(readCharacterFields(characterRawData({ talents: null }), 'none').talents).toBeNull()
+  })
+
+  it('names the shape it did not understand rather than reading an IV out of it', () => {
+    const fields = readCharacterFields(characterRawData({ talents: { hp: 80, shot: 55 }, talentType: 'float' }), 'float')
+    expect(fields.talents).toBeNull()
+    expect(fields.oddTypes).toEqual(['Talent_HP (FloatProperty)', 'Talent_Shot (FloatProperty)'])
   })
 
   it('defaults only the IVs that are actually missing', () => {
@@ -118,6 +136,33 @@ describe('readCharacterFields', () => {
     expect(fields.characterId).toBeNull()
   })
 
+  it('skips cleanly through an ArrayProperty<StructProperty>, which is not stored bare', () => {
+    // `clutter` includes GotStatusPointList, the one array shape that writes a full inner tag
+    // before its elements (reference §3.5). Skipping it by size has to cross that tag without
+    // knowing it exists; a parser that assumed bare elements would desync and lose Talent_Defense.
+    const raw = characterRawData({
+      characterId: 'CatMage',
+      talents: { hp: 1, shot: 2, defense: 3 },
+      clutter: true,
+      isPlayer: false,
+    })
+    // IsPlayer is written after the array, so reading it at all proves we came out the far side in
+    // the right place — not just that nothing threw.
+    expect(readCharacterFields(raw, 'status-list')).toEqual({
+      characterId: 'CatMage',
+      gender: 'F',
+      passives: [],
+      talents: { hp: 1, shot: 2, defense: 3 },
+      isPlayer: false,
+      oddTypes: [],
+    })
+  })
+
+  it('refuses to guess when that array lies about its size', () => {
+    const raw = characterRawData({ characterId: 'CatMage', clutter: true, corruptStatusListSize: 12 })
+    expect(codeOf(() => readCharacterFields(raw, 'status-list'))).toBe('skip-drift')
+  })
+
   it('reads fields sitting after a UTF-16 nickname and a pile of unread properties', () => {
     const raw = characterRawData({
       characterId: 'CatMage',
@@ -134,6 +179,7 @@ describe('readCharacterFields', () => {
       passives: ['Legend'],
       talents: { hp: 12, shot: 34, defense: 56 },
       isPlayer: false,
+      oddTypes: [],
     })
   })
 })

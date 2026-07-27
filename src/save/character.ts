@@ -25,6 +25,12 @@ export interface CharacterFields {
   passives: string[]
   talents: Talents | null
   isPlayer: boolean
+  /**
+   * Fields we understood the name of but not the shape, as `Talent_HP (FloatProperty)`. Left null
+   * rather than guessed — but the caller has to be able to say so, since silently blank IVs across
+   * a whole world is exactly the failure this parser is built to avoid hiding.
+   */
+  oddTypes: string[]
 }
 
 /** `EPalGenderType::Male` on the wire; absent or `None` means the save isn't telling us. */
@@ -84,7 +90,10 @@ function readSaveParameter(cur: Cursor, out: CharacterFields, slots: TalentSlots
       case 'talent_shot':
       case 'talent_defense': {
         const value = readByteOrInt(cur, tag)
-        if (value === null) return 'skip'
+        if (value === null) {
+          out.oddTypes.push(`${tag.name} (${tag.type})`)
+          return 'skip'
+        }
         if (key === 'talent_hp') slots.hp = value
         else if (key === 'talent_shot') slots.shot = value
         else slots.defense = value
@@ -109,6 +118,7 @@ export function readCharacterFields(raw: Uint8Array, path: string): CharacterFie
     passives: [],
     talents: null,
     isPlayer: false,
+    oddTypes: [],
   }
   const slots: TalentSlots = { hp: null, shot: null, defense: null }
 

@@ -60,7 +60,7 @@ describe('save-import.worker', () => {
     expect(response.ok).toBe(true)
     if (!response.ok) throw new Error(response.detail)
     expect(response.requestId).toBe(7)
-    expect(response.result.playerCount).toBe(1)
+    expect(response.result.nonPalRows).toBe(1)
     expect(response.result.owned).toEqual([
       { speciesIndex: expect.any(Number), gender: 'F', passives: [], talents: { hp: 90, shot: 0, defense: 0 } },
     ])

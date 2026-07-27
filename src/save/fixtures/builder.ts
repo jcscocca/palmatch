@@ -195,6 +195,43 @@ export function structProp(w: Writer, name: string, structType: string, body: Ui
   prop(w, name, 'StructProperty', (e) => void e.fstring(structType).guid().u8(0), body, sizeDelta)
 }
 
+/**
+ * The one array shape that is not bare (reference §3.5): an `ArrayProperty<StructProperty>` writes
+ * a full inner tag — count, prop name, prop type, an unused u64, the struct type name, a GUID and a
+ * skipped byte — before its elements, which are then bare struct bodies. All of it is inside the
+ * outer tag's declared `size`, so a parser that skips by size crosses it without knowing any of
+ * this; one that assumed bare elements would desync. `GotStatusPointList` is this shape in a real
+ * pal, which makes it the likeliest thing to break a first contact with a real save.
+ */
+export function structArrayProp(
+  w: Writer,
+  name: string,
+  structType: string,
+  entries: Uint8Array[],
+  sizeDelta = 0,
+): void {
+  const elements = build((v) => {
+    for (const entry of entries) v.bytes(entry)
+  })
+  prop(
+    w,
+    name,
+    'ArrayProperty',
+    (e) => void e.fstring('StructProperty').u8(0),
+    build((v) => {
+      v.u32(entries.length)
+      v.fstring(name)
+      v.fstring('StructProperty')
+      v.u64(elements.length)
+      v.fstring(structType)
+      v.guid()
+      v.u8(0)
+      v.bytes(elements)
+    }),
+    sizeDelta,
+  )
+}
+
 /** A nested property list's terminator; struct bodies include it in their declared size. */
 export function none(w: Writer): void {
   w.fstring('None')
@@ -206,13 +243,16 @@ export interface PalSpec {
   gender?: 'Male' | 'Female' | 'None' | null
   passives?: string[] | null
   talents?: { hp?: number; shot?: number; defense?: number } | null
-  /** Reference §8 can't confirm which of these ships; both must parse. */
-  talentType?: 'byte' | 'int'
+  /** Reference §8 can't confirm which of these ships; both must parse. `float` is neither — it
+   * stands in for a future shape we don't understand, which must warn rather than read as zero. */
+  talentType?: 'byte' | 'int' | 'float'
   isPlayer?: boolean | null
   /** A UTF-16 nickname, so fixtures exercise the negative-length FString the parser must skip past. */
   nickName?: string | null
   /** Property types we never read, present so the skip table is exercised on every entry. */
   clutter?: boolean
+  /** Lies about the size of the `GotStatusPointList` array, so skipping it lands mid-value. */
+  corruptStatusListSize?: number
 }
 
 /**
@@ -229,9 +269,10 @@ export function characterRawData(spec: PalSpec = {}): Uint8Array {
     isPlayer = null,
     nickName = null,
     clutter = false,
+    corruptStatusListSize = 0,
   } = spec
 
-  const number = talentType === 'byte' ? byteProp : intProp
+  const number = talentType === 'byte' ? byteProp : talentType === 'int' ? intProp : floatProp
   const body = build((b) => {
     if (characterId !== null) nameProp(b, 'CharacterID', characterId)
     if (gender !== null) enumProp(b, 'Gender', 'EPalGenderType', `EPalGenderType::${gender}`)
@@ -240,7 +281,6 @@ export function characterRawData(spec: PalSpec = {}): Uint8Array {
     if (talents?.hp !== undefined) number(b, 'Talent_HP', talents.hp)
     if (talents?.shot !== undefined) number(b, 'Talent_Shot', talents.shot)
     if (talents?.defense !== undefined) number(b, 'Talent_Defense', talents.defense)
-    if (isPlayer !== null) boolProp(b, 'IsPlayer', isPlayer)
     if (clutter) {
       int64Prop(b, 'Exp', 1234567)
       floatProp(b, 'FullStomach', 150.5)
@@ -257,7 +297,26 @@ export function characterRawData(spec: PalSpec = {}): Uint8Array {
         }),
       )
       nameArrayProp(b, 'MasteredWaza', ['EPalWazaID::PowerShot'], 'EnumProperty')
+      structArrayProp(
+        b,
+        'GotStatusPointList',
+        'PalGotStatusPoint',
+        [
+          ['Hp', 3],
+          ['ShotAttack', 1],
+        ].map(([statusName, point]) =>
+          build((s) => {
+            nameProp(s, 'StatusName', String(statusName))
+            intProp(s, 'StatusPoint', Number(point))
+            none(s)
+          }),
+        ),
+        corruptStatusListSize,
+      )
     }
+    // Written last on purpose: with `clutter` on, reading it correctly means the walk crossed
+    // every awkward shape above it — including the struct array — without drifting.
+    if (isPlayer !== null) boolProp(b, 'IsPlayer', isPlayer)
     none(b)
   })
 

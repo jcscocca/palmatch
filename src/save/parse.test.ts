@@ -1,14 +1,16 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { loadDatasetFromDisk } from '../engine/dataset.ts'
+import type { Dataset } from '../engine/types.ts'
 import { cnk0, junkFile, levelGvas, plm1, plz1, plz2, truncateTo, type PalSpec } from './fixtures/builder.ts'
 import { MAX_SAVE_BYTES, parseSave } from './parse.ts'
 import { ParseError, type ImportResult } from './types.ts'
 
+let ds: Dataset
 let byIdLower: Map<string, number>
 
 /** The species ids are real, so the fixtures exercise the same lookup the app will. */
 beforeAll(async () => {
-  const ds = await loadDatasetFromDisk('public/data')
+  ds = await loadDatasetFromDisk('public/data')
   byIdLower = new Map([...ds.byId].map(([id, index]) => [id.toLowerCase(), index]))
 })
 
@@ -45,6 +47,9 @@ const WORLD: PalSpec[] = [
   { characterId: null, gender: null, isPlayer: true, nickName: 'Jacob' },
 ]
 
+/** What the fixture actually encodes: rows with a CharacterID that aren't flagged as the player. */
+const ENCODED_PALS = WORLD.filter((p) => p.characterId !== null && p.isPlayer !== true).length
+
 function parse(buffer: ArrayBuffer): Promise<ImportResult> {
   return parseSave(buffer, byIdLower)
 }
@@ -54,7 +59,7 @@ describe('parseSave', () => {
     const result = await parse(plz1(levelGvas({ pals: WORLD })))
 
     expect(result.palCount).toBe(3)
-    expect(result.playerCount).toBe(1)
+    expect(result.nonPalRows).toBe(1)
     expect(result.unknownSpecies).toEqual([])
     expect(result.owned).toEqual([
       {
@@ -92,11 +97,34 @@ describe('parseSave', () => {
     expect(result.owned.map((p) => p.speciesIndex)).toEqual([idx('SheepBall')])
     expect(result.unknownSpecies).toEqual(['GYM_ThunderDragonMan', 'NewPalFrom2027'])
     expect(result.palCount).toBe(4)
+    // Three pals lost to two species — the warning counts pals, since that's what the user missed.
+    expect(result.warnings).toEqual(["left out 3 pals whose species palmatch doesn't know: GYM_ThunderDragonMan, NewPalFrom2027"])
+  })
+
+  it('warns instead of reporting zeroes when IVs are stored in a shape we do not know', async () => {
+    // If a future patch moves Talent_* to some third type, the failure mode must be visible: a
+    // silently 0-IV world looks entirely plausible and would be believed.
+    const pals: PalSpec[] = [
+      { characterId: 'SheepBall', talents: { hp: 80, shot: 55, defense: 30 }, talentType: 'float' },
+      { characterId: 'CatMage', talents: { hp: 90 }, talentType: 'float' },
+    ]
+    const result = await parse(plz1(levelGvas({ pals })))
+
+    expect(result.owned).toHaveLength(2)
+    expect(result.owned.map((p) => p.talents)).toEqual([null, null])
+    expect(result.warnings).toEqual([
+      "this save stores Talent_Defense (FloatProperty), Talent_HP (FloatProperty), Talent_Shot (FloatProperty) in a form palmatch doesn't recognise, so those IVs were left blank",
+    ])
+  })
+
+  it('says nothing when there is nothing to say', async () => {
+    const result = await parse(plz1(levelGvas({ pals: WORLD })))
+    expect(result.warnings).toEqual([])
   })
 
   it('handles a world with no pals in it', async () => {
     const result = await parse(plz1(levelGvas({ pals: [] })))
-    expect(result).toEqual({ owned: [], unknownSpecies: [], playerCount: 0, palCount: 0 })
+    expect(result).toEqual({ owned: [], unknownSpecies: [], nonPalRows: 0, palCount: 0, warnings: [] })
   })
 
   it('reads 200 entries with the counts intact', async () => {
@@ -191,10 +219,21 @@ describe('parseSave on corrupted saves', () => {
       }
       if (result !== null) {
         parsed++
-        // A flipped bit inside a name or an IV still parses. It may cost us a row — corrupting
-        // "RawData" itself leaves an entry we can't read — but it must never invent one.
-        expect(result.owned.length).toBeLessThanOrEqual(result.palCount)
-        expect(result.palCount + result.playerCount).toBeLessThanOrEqual(WORLD.length)
+        // A flipped bit inside a name or an IV still parses, and may cost us a row — corrupting
+        // "RawData" itself leaves an entry we can't read. What it must never do is produce a row
+        // the fixture didn't encode, or a pal whose contents are noise dressed up as data.
+        expect(result.palCount).toBeLessThanOrEqual(ENCODED_PALS)
+        expect(result.palCount + result.nonPalRows).toBeLessThanOrEqual(WORLD.length)
+        for (const pal of result.owned) {
+          expect(ds.pals[pal.speciesIndex]).toBeDefined()
+          for (const iv of Object.values(pal.talents ?? {})) {
+            // The IV range the game uses. A desync reading garbage as an IntProperty lands here.
+            expect(iv).toBeGreaterThanOrEqual(0)
+            expect(iv).toBeLessThanOrEqual(255)
+          }
+          // Passive keys are DT_PassiveSkill_Main row names: short and printable, always.
+          for (const passive of pal.passives) expect(passive).toMatch(/^[\x20-\x7e]{1,64}$/)
+        }
       }
     }
 

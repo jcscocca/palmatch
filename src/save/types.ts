@@ -56,12 +56,20 @@ export interface OwnedPal {
  * `palCount` counts pal rows found in the save, `owned` only those whose species we could resolve —
  * the difference is `unknownSpecies` (raw `CharacterID`s, deduped and sorted), which is expected to
  * be non-empty for bosses, humans and pals newer than our dataset.
+ *
+ * `nonPalRows` is every other row in the character map: the player themselves, plus anything with
+ * no usable `CharacterID`. It is deliberately not called a player count — one save can hold several
+ * players and an unknown number of non-player oddities, and the UI must not claim otherwise.
+ *
+ * `warnings` is the parser's channel for "this worked, but you should know": species we skipped,
+ * fields stored in a shape we didn't expect. Each is a finished sentence for the panel to show.
  */
 export interface ImportResult {
   owned: OwnedPal[]
   unknownSpecies: string[]
-  playerCount: number
+  nonPalRows: number
   palCount: number
+  warnings: string[]
 }
 
 /**

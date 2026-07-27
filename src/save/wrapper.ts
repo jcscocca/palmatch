@@ -67,47 +67,55 @@ export function sniffWrapper(bytes: Uint8Array): SaveWrapper {
       `unrecognised save magic "${magic}" (0x${saveType.toString(16)}) — this doesn't look like a Palworld .sav`,
     )
   }
-  if (uncompressedLen > MAX_DECOMPRESSED_BYTES) {
-    throw new ParseError(
-      'too-large',
-      `the save declares ${Math.round(uncompressedLen / 1024 / 1024)} MB of decompressed data, past the ${MAX_DECOMPRESSED_BYTES / 1024 / 1024} MB limit`,
-    )
+  // Both lengths are bounded here, before either can be used as an inflate budget. `compressedLen`
+  // is not merely a payload size: in a double-deflate save it is the length of the *intermediate*
+  // blob, i.e. the cap on the first pass. A save whose intermediate legitimately outgrew the final
+  // GVAS by more than this cannot exist — deflate is not an expander — so one constant covers both,
+  // and neither field can be used to talk us into allocating gigabytes.
+  for (const [label, declared] of [
+    ['decompressed', uncompressedLen],
+    ['intermediate', compressedLen],
+  ] as const) {
+    if (declared > MAX_DECOMPRESSED_BYTES) {
+      throw new ParseError(
+        'too-large',
+        `the save declares ${Math.round(declared / 1024 / 1024)} MB of ${label} data, past the ${MAX_DECOMPRESSED_BYTES / 1024 / 1024} MB limit`,
+      )
+    }
   }
   return { magic, saveType, uncompressedLen, compressedLen, dataOffset: 12 }
 }
 
-/** How much compressed input to hand pako between output-size checks. */
-const INFLATE_STEP = 1 << 20
-
 /**
  * One zlib pass, refusing to expand past `limit` bytes.
  *
- * The bound matters: a zlib stream can expand ~1000x, so a one-shot `inflate()` would let a
- * corrupt or hostile file allocate tens of GB and kill the worker outright, before any of the
- * header's length checks could run. Feeding pako the input in slices lets us stop within one slice
- * of the limit and answer with a `ParseError` like every other bad file. `limit` is the length the
- * save's own header declares, so a well-formed file never comes close to it.
+ * The bound matters: a zlib stream can expand ~1000x, so a one-shot `inflate()` would let a corrupt
+ * or hostile file allocate tens of GB and kill the worker outright, before any of the header's
+ * length checks could run. The check therefore lives *inside* pako's output callback, which is the
+ * only place that sees each block as it is produced — checking between `push()` calls would let a
+ * whole slice of input expand first. pako hands us output in `chunkSize` blocks (64 KiB by
+ * default) and has no try/catch around the callback, so throwing here stops the decode with at
+ * most one block of overshoot past the limit.
+ *
+ * `limit` is a length the save's own header declares and `sniffWrapper` has already bounded, so a
+ * well-formed file never comes near it.
  */
 function inflateOnce(data: Uint8Array, limit: number, pass: string): Uint8Array {
   const inflator = new Inflate()
   const chunks: Uint8Array[] = []
   let total = 0
   inflator.onData = (chunk) => {
-    chunks.push(chunk)
     total += chunk.length
-  }
-
-  for (let at = 0; at < data.byteLength; at += INFLATE_STEP) {
-    const end = Math.min(at + INFLATE_STEP, data.byteLength)
-    inflator.push(data.subarray(at, end), end === data.byteLength)
     if (total > limit) {
       throw new ParseError(
         'truncated',
-        `the ${pass} zlib stream expands past the ${limit} bytes the save's header declares — the file is corrupt`,
+        `the ${pass} zlib stream expands past the ${limit} bytes the save's header declares (stopped after ${total}) — the file is corrupt`,
       )
     }
-    if (inflator.ended) break
+    chunks.push(chunk)
   }
+
+  inflator.push(data, true)
   if (inflator.err !== 0) {
     throw new ParseError(
       'truncated',
