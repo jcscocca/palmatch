@@ -52,6 +52,10 @@ function dexOrder(a: PalRecord, b: PalRecord): number {
  * digit-string dex lookup, an optional type filter applied before ranking, ties broken by dex so
  * results are stable across calls. Empty query short-circuits to no results — the caller decides
  * what an empty search box shows (recents, everything, nothing).
+ *
+ * `typeFilter`, when given, is an OR filter: a pal passes if it has at least one of the listed
+ * types. Values are raw palpedia type strings as stored in `PalRecord.types` (e.g. "fire",
+ * "water", "dragon") — not the capitalized element-icon names in `src/lib/elements.ts`.
  */
 export function searchPals(pals: PalRecord[], query: string, typeFilter?: string[]): number[] {
   const rawQuery = query.trim()

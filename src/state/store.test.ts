@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_CHAIN_DEPTH, MAX_PARENT_PASSIVES, createWorkbenchStore, modeFor } from './store.ts'
+import { DEFAULT_CHAIN_DEPTH, MAX_PARENT_PASSIVES, createWorkbenchStore, modeFor, normalizeSlots } from './store.ts'
+
+describe('normalizeSlots', () => {
+  it('treats slot A as primary, with B as secondary, when both are filled', () => {
+    expect(normalizeSlots({ slotA: 1, slotB: 2, target: null })).toEqual({ primary: 1, secondary: 2 })
+  })
+
+  it('treats slot A as primary, alone, when only A is filled', () => {
+    expect(normalizeSlots({ slotA: 1, slotB: null, target: null })).toEqual({ primary: 1, secondary: null })
+  })
+
+  it('promotes slot B to primary, with no secondary, when only B is filled', () => {
+    expect(normalizeSlots({ slotA: null, slotB: 2, target: null })).toEqual({ primary: 2, secondary: null })
+  })
+
+  it('has no primary when both parent slots are empty', () => {
+    expect(normalizeSlots({ slotA: null, slotB: null, target: 9 })).toEqual({ primary: null, secondary: null })
+  })
+})
 
 describe('modeFor', () => {
   it('is empty when nothing is filled', () => {
@@ -69,6 +87,54 @@ describe('createWorkbenchStore', () => {
     store.getState().setSlot('t', 11)
     expect(store.getState().target).toBe(11)
     expect(store.getState().tab).toBeNull()
+  })
+
+  it('keeps the active tab when a slot change does not switch modes', () => {
+    const store = createWorkbenchStore()
+    store.getState().setSlot('a', 1)
+    store.getState().setSlot('b', 2) // pair mode
+    store.getState().setTab('mutations')
+
+    store.getState().setSlot('b', 3) // still pair mode, just a different B partner
+    expect(store.getState().slotB).toBe(3)
+    expect(store.getState().tab).toBe('mutations')
+  })
+
+  it('never holds slotB while slotA is null: filling B alone promotes it to A', () => {
+    const store = createWorkbenchStore()
+    store.getState().setSlot('b', 4)
+    expect(store.getState().slotA).toBe(4)
+    expect(store.getState().slotB).toBeNull()
+  })
+
+  it('never holds slotB while slotA is null: clearing A shifts B down into A', () => {
+    const store = createWorkbenchStore()
+    store.getState().setSlot('a', 1)
+    store.getState().setSlot('b', 2)
+    store.getState().setSlot('a', null)
+    expect(store.getState().slotA).toBe(2)
+    expect(store.getState().slotB).toBeNull()
+  })
+
+  it('setSlot(slot, null) clears just that slot when the invariant is not implicated', () => {
+    const store = createWorkbenchStore()
+    store.getState().setSlot('a', 1)
+    store.getState().setSlot('b', 2)
+
+    store.getState().setSlot('b', null)
+    expect(store.getState().slotA).toBe(1)
+    expect(store.getState().slotB).toBeNull()
+
+    store.getState().setSlot('t', 9)
+    store.getState().setSlot('t', null)
+    expect(store.getState().target).toBeNull()
+  })
+
+  it('setSlot(slot, null) on an already-empty slot is a no-op', () => {
+    const store = createWorkbenchStore()
+    store.getState().setSlot('a', null)
+    expect(store.getState().slotA).toBeNull()
+    expect(store.getState().slotB).toBeNull()
   })
 
   it('clamps declared parent passives to the documented max', () => {

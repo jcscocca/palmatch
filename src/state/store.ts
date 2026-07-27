@@ -9,7 +9,15 @@ export interface ParentPassives {
   b: string[]
 }
 
-export interface WorkbenchState {
+/**
+ * Plain state, no actions. Split out from `WorkbenchState` so `initialState()` can return this
+ * shape directly instead of hand-listing every action key to omit from the full interface.
+ */
+export interface WorkbenchData {
+  /**
+   * Invariant enforced by `setSlot` (see below): `slotB` is never non-null while `slotA` is
+   * null. Readers - the UI, the URL codec - can rely on that and never need to re-derive it.
+   */
   slotA: number | null
   slotB: number | null
   target: number | null
@@ -19,6 +27,9 @@ export interface WorkbenchState {
   /** Passive ids the player has declared for each parent, max 4 each. */
   parentPassives: ParentPassives
   desiredPassives: string[]
+}
+
+export interface WorkbenchActions {
   setSlot(slot: 'a' | 'b' | 't', v: number | null): void
   setTab(tab: string | null): void
   setChainDepth(d: number): void
@@ -26,6 +37,8 @@ export interface WorkbenchState {
   setDesiredPassives(ids: string[]): void
   clearAll(): void
 }
+
+export type WorkbenchState = WorkbenchData & WorkbenchActions
 
 export type Mode = 'empty' | 'a-only' | 'pair' | 'target' | 'chain'
 
@@ -41,6 +54,11 @@ export interface SlotState {
  * `secondary` only exists when A itself was the one filled (i.e. both slots are genuinely in
  * play). This is the one place that normalization happens; `modeFor` and the URL codec both
  * build on it so they can't disagree about what "A only" or "chain from B" means.
+ *
+ * `setSlot` additionally enforces this shape as a store invariant (a lone starter always lands
+ * in `slotA`, never `slotB`), so in practice `s.slotB` alone is never what triggers this path.
+ * It stays here as a safety net for callers who build `SlotState` by hand (the URL codec parses
+ * routes where a `b`-only shape could otherwise arise) rather than through the store.
  */
 export function normalizeSlots(s: SlotState): { primary: number | null; secondary: number | null } {
   const primary = s.slotA ?? s.slotB
@@ -62,7 +80,7 @@ export function modeFor(s: SlotState): Mode {
   return 'empty'
 }
 
-function initialState(): Omit<WorkbenchState, 'setSlot' | 'setTab' | 'setChainDepth' | 'setParentPassives' | 'setDesiredPassives' | 'clearAll'> {
+function initialState(): WorkbenchData {
   return {
     slotA: null,
     slotB: null,
@@ -81,13 +99,33 @@ function initialState(): Omit<WorkbenchState, 'setSlot' | 'setTab' | 'setChainDe
 export function createWorkbenchStore(): UseBoundStore<StoreApi<WorkbenchState>> {
   return create<WorkbenchState>((set) => ({
     ...initialState(),
-    setSlot: (slot, v) => {
-      // Any slot change can move the workbench into a different mode, so a tab id chosen under
-      // the old mode may no longer exist. Clearing it lets the UI fall back to that mode's default.
-      if (slot === 'a') set({ slotA: v, tab: null })
-      else if (slot === 'b') set({ slotB: v, tab: null })
-      else set({ target: v, tab: null })
-    },
+    setSlot: (slot, v) =>
+      set((state) => {
+        let slotA = state.slotA
+        let slotB = state.slotB
+        let target = state.target
+        if (slot === 'a') slotA = v
+        else if (slot === 'b') slotB = v
+        else target = v
+
+        // Enforce the "slotB never held while slotA is null" invariant right here, the one
+        // place slots are written, rather than leaving every reader to re-derive it:
+        //  - filling B while A is empty promotes it to A (setSlot('b', v) becomes the pal's
+        //    *only* slot, same as calling setSlot('a', v));
+        //  - clearing A while B is still filled shifts B down into A instead of leaving a
+        //    B-only state behind.
+        if (slotA === null && slotB !== null) {
+          slotA = slotB
+          slotB = null
+        }
+
+        const next = { slotA, slotB, target }
+        // A tab id only makes sense within the mode it was chosen under. Clear it when the mode
+        // actually changes, but leave it alone for a same-mode edit - e.g. swapping parent B for
+        // a different pal in pair mode shouldn't kick the player off the tab they're looking at.
+        const tab = modeFor(state) === modeFor(next) ? state.tab : null
+        return { ...next, tab }
+      }),
     setTab: (tab) => set({ tab }),
     setChainDepth: (d) => set({ chainDepth: d }),
     setParentPassives: (side, ids) =>

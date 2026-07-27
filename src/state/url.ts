@@ -7,13 +7,19 @@ export interface UrlState {
   slotA: number | null
   slotB: number | null
   target: number | null
+  /**
+   * Active result-tab id, written into the hash unescaped as `@<tab>`. Tab ids come from this
+   * app's own tab definitions, never user text, so the contract is enforced by convention: they
+   * must match `/^[a-z-]+$/` (lowercase letters and hyphens only) so they can never collide with
+   * `~`, `+`, `@`, or `/` - the characters the rest of the grammar depends on.
+   */
   tab: string | null
 }
 
 const EMPTY_STATE: UrlState = { slotA: null, slotB: null, target: null, tab: null }
 
 export interface ParseResult {
-  state: Partial<UrlState>
+  state: UrlState
   warnings: string[]
 }
 
@@ -22,29 +28,62 @@ function idOf(pals: PalRecord[], index: number): string {
 }
 
 /**
+ * `>` sits in the URL fragment's percent-encode set: `history.replaceState`/`location.hash =`
+ * silently rewrite it to `%3E` on write (verified against jsdom, matching real browsers), which
+ * broke chain links two ways - parseHash never saw a `>` it could split on, and syncToHash's
+ * `window.location.hash === hash` short-circuit could never match its own un-encoded `>` against
+ * the browser's encoded copy, so every store write re-issued a `replaceState` call (a throttling
+ * risk in Safari). `~` is unreserved and survives untouched, so it's the separator going forward.
+ * Parsing stays tolerant of the old `>` and its browser-mangled `%3E` form so links shared before
+ * this fix, or hand-typed with `>`, still resolve - see bindUrl's on-bind canonicalization, which
+ * rewrites any of these back to `~` in the address bar immediately.
+ */
+const CHAIN_SEPARATORS = ['~', '>', '%3E']
+
+function findChainSeparator(rest: string): { index: number; length: number } | null {
+  const upper = rest.toUpperCase()
+  let best: { index: number; length: number } | null = null
+  for (const sep of CHAIN_SEPARATORS) {
+    const idx = upper.indexOf(sep)
+    if (idx !== -1 && (best === null || idx < best.index)) best = { index: idx, length: sep.length }
+  }
+  return best
+}
+
+/**
  * Canonical hash for the workbench state. Canonical means: re-parsing this string and re-encoding
  * it produces the same string again — even when `s` itself is not canonical (e.g. only `slotB`
- * filled), because `normalizeSlots` is applied before anything is rendered.
+ * filled), because `normalizeSlots` is applied before anything is rendered. The `if (x === null)
+ * throw` guards below exist only so TypeScript can narrow without an `as number` cast; `modeFor`
+ * guarantees they never fire (e.g. `mode === 'chain'` only ever holds when `primary` and
+ * `s.target` are both non-null).
  */
 export function encodeState(s: UrlState, pals: PalRecord[]): string {
   const mode = modeFor(s)
   const tabSuffix = s.tab !== null && s.tab !== '' ? `@${s.tab}` : ''
   const { primary, secondary } = normalizeSlots(s)
 
-  switch (mode) {
-    case 'empty':
-      return '#/'
-    case 'a-only':
-      return `#/a/${idOf(pals, primary as number)}${tabSuffix}`
-    case 'pair':
-      return `#/b/${idOf(pals, primary as number)}+${idOf(pals, secondary as number)}${tabSuffix}`
-    case 'target':
-      return `#/t/${idOf(pals, s.target as number)}${tabSuffix}`
-    case 'chain': {
-      const rest = secondary !== null ? `+${idOf(pals, secondary)}` : ''
-      return `#/c/${idOf(pals, primary as number)}${rest}>${idOf(pals, s.target as number)}${tabSuffix}`
-    }
+  if (mode === 'empty') return '#/'
+
+  if (mode === 'target') {
+    if (s.target === null) throw new Error('encodeState: target mode without a target')
+    return `#/t/${idOf(pals, s.target)}${tabSuffix}`
   }
+
+  // a-only, pair, and chain all require a primary starter by construction of modeFor.
+  if (primary === null) throw new Error('encodeState: mode requires a primary starter')
+
+  if (mode === 'a-only') return `#/a/${idOf(pals, primary)}${tabSuffix}`
+
+  if (mode === 'pair') {
+    if (secondary === null) throw new Error('encodeState: pair mode without a second starter')
+    return `#/b/${idOf(pals, primary)}+${idOf(pals, secondary)}${tabSuffix}`
+  }
+
+  // mode === 'chain'
+  if (s.target === null) throw new Error('encodeState: chain mode without a target')
+  const rest = secondary !== null ? `+${idOf(pals, secondary)}` : ''
+  return `#/c/${idOf(pals, primary)}${rest}~${idOf(pals, s.target)}${tabSuffix}`
 }
 
 /** Builds a lowercase-id -> index lookup once per parse; `byId` itself is keyed by exact case. */
@@ -117,10 +156,10 @@ export function parseHash(hash: string, byId: Map<string, number>): ParseResult 
   }
 
   if (route === 'c') {
-    const gt = rest.indexOf('>')
-    if (gt === -1) return malformed()
-    const startersPart = rest.slice(0, gt)
-    const targetPart = rest.slice(gt + 1)
+    const sep = findChainSeparator(rest)
+    if (sep === null) return malformed()
+    const startersPart = rest.slice(0, sep.index)
+    const targetPart = rest.slice(sep.index + sep.length)
     if (startersPart === '' || targetPart === '') return malformed()
     const starterIds = startersPart.split('+')
     if (starterIds.length > 2 || starterIds.some((id) => id === '')) return malformed()
@@ -140,26 +179,29 @@ export function parseHash(hash: string, byId: Map<string, number>): ParseResult 
  *
  * Each direction sets a flag while it is driving the other, so the write it causes on the far side
  * is recognized as an echo and skipped rather than bouncing back again.
+ *
+ * `onWarnings`, if given, is invoked with every `parseHash` result (including an empty array on a
+ * clean parse) - Task 8 wires it to a toast ("unknown pal 'xyz' cleared from link").
  */
 export function bindUrl(
   store: UseBoundStore<StoreApi<WorkbenchState>>,
   pals: PalRecord[],
   byId: Map<string, number>,
+  onWarnings?: (warnings: string[]) => void,
 ): () => void {
   let applyingFromHash = false
+  // Guards against a hypothetical environment where `history.replaceState` synchronously
+  // dispatches 'hashchange'. Real browsers never do this - replaceState doesn't fire hashchange
+  // at all - but the flag costs nothing and means bindUrl doesn't depend on that non-guarantee.
   let applyingToHash = false
 
   const syncFromHash = (): void => {
     if (applyingToHash) return
-    const { state } = parseHash(window.location.hash, byId)
+    const { state, warnings } = parseHash(window.location.hash, byId)
+    onWarnings?.(warnings)
     applyingFromHash = true
     try {
-      store.setState({
-        slotA: state.slotA ?? null,
-        slotB: state.slotB ?? null,
-        target: state.target ?? null,
-        tab: state.tab ?? null,
-      })
+      store.setState({ slotA: state.slotA, slotB: state.slotB, target: state.target, tab: state.tab })
     } finally {
       applyingFromHash = false
     }
@@ -181,6 +223,11 @@ export function bindUrl(
   // A page load or pasted link arrives as an initial hash with no store state yet — seed the
   // store from it before wiring the ongoing subscriptions.
   syncFromHash()
+  // Then immediately canonicalize whatever's in the address bar: a broken or legacy-separator
+  // link (already parsed above) gets rewritten to the canonical form right away, rather than
+  // waiting on the next store change. Skipped on a genuinely blank hash so a fresh visit with no
+  // route in it doesn't gain a `#/` it never had.
+  if (window.location.hash !== '') syncToHash()
 
   const unsubscribeStore = store.subscribe(syncToHash)
   window.addEventListener('hashchange', syncFromHash)

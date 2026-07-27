@@ -39,16 +39,16 @@ describe('encodeState / parseHash round-trip', () => {
     expect(parseHash('#/t/grizzbolt', BY_ID)).toEqual({ state: s, warnings: [] })
   })
 
-  it('chain with a single starter, omitting the +<b> segment', () => {
+  it('chain with a single starter, omitting the +<b> segment, using the fragment-safe ~ separator', () => {
     const s: UrlState = { slotA: 0, slotB: null, target: 2, tab: null }
-    expect(encodeState(s, PALS)).toBe('#/c/foxparks>grizzbolt')
-    expect(parseHash('#/c/foxparks>grizzbolt', BY_ID)).toEqual({ state: s, warnings: [] })
+    expect(encodeState(s, PALS)).toBe('#/c/foxparks~grizzbolt')
+    expect(parseHash('#/c/foxparks~grizzbolt', BY_ID)).toEqual({ state: s, warnings: [] })
   })
 
   it('chain with two starters', () => {
     const s: UrlState = { slotA: 0, slotB: 1, target: 2, tab: null }
-    expect(encodeState(s, PALS)).toBe('#/c/foxparks+bristla>grizzbolt')
-    expect(parseHash('#/c/foxparks+bristla>grizzbolt', BY_ID)).toEqual({ state: s, warnings: [] })
+    expect(encodeState(s, PALS)).toBe('#/c/foxparks+bristla~grizzbolt')
+    expect(parseHash('#/c/foxparks+bristla~grizzbolt', BY_ID)).toEqual({ state: s, warnings: [] })
   })
 
   it('carries an optional @tab suffix on every form', () => {
@@ -69,7 +69,15 @@ describe('encodeState / parseHash round-trip', () => {
     const hash = encodeState(raw, PALS)
     expect(hash).toBe('#/a/bristla')
     const { state } = parseHash(hash, BY_ID)
-    expect(encodeState(state as UrlState, PALS)).toBe(hash)
+    expect(encodeState(state, PALS)).toBe(hash)
+  })
+
+  it('parses legacy/browser-mangled chain separators (>, %3E) the same as the canonical ~', () => {
+    const expected = { state: { slotA: 0, slotB: null, target: 2, tab: null }, warnings: [] }
+    expect(parseHash('#/c/foxparks~grizzbolt', BY_ID)).toEqual(expected)
+    expect(parseHash('#/c/foxparks>grizzbolt', BY_ID)).toEqual(expected)
+    expect(parseHash('#/c/foxparks%3Egrizzbolt', BY_ID)).toEqual(expected)
+    expect(parseHash('#/c/foxparks%3egrizzbolt', BY_ID)).toEqual(expected) // lowercase hex digit
   })
 })
 
@@ -94,61 +102,50 @@ describe('parseHash edge cases', () => {
   })
 })
 
-/** A minimal, controllable stand-in for `window` so bindUrl's reentrancy guard can be exercised deterministically. */
-function fakeWindow(initialHash: string) {
-  const location = { hash: initialHash }
-  const listeners: Array<() => void> = []
-  const replaceState = vi.fn((_state: unknown, _title: string, url: string) => {
-    const i = url.indexOf('#')
-    location.hash = i === -1 ? '' : url.slice(i)
-  })
-  return {
-    location,
-    history: { replaceState },
-    addEventListener: (_type: 'hashchange', listener: () => void) => listeners.push(listener),
-    removeEventListener: (_type: 'hashchange', listener: () => void) => {
-      const i = listeners.indexOf(listener)
-      if (i !== -1) listeners.splice(i, 1)
-    },
-    fireHashChange: () => listeners.forEach((l) => l()),
-  }
-}
-
+/**
+ * bindUrl reads/writes the real `window`, and the bug this suite guards against (chain URLs
+ * getting mangled) is specifically about what a real URL implementation does to `>` on write -
+ * so these tests run against the actual jsdom `window` rather than a hand-rolled stand-in.
+ * `HashChangeEvent` is dispatched manually because jsdom does not fire it on a bare
+ * `location.hash = ...` assignment (verified directly against jsdom; real browsers do fire it
+ * for that assignment, but not for `history.replaceState`, which is the asymmetry this module
+ * depends on).
+ */
 describe('bindUrl', () => {
-  let win: ReturnType<typeof fakeWindow>
-
   beforeEach(() => {
-    win = fakeWindow('')
-    vi.stubGlobal('window', win)
+    window.location.hash = ''
   })
 
   afterEach(() => {
-    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
+
+  function fireHashChange(hash: string): void {
+    window.location.hash = hash
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+  }
 
   it('writes store changes to the hash via history.replaceState', () => {
     const store = createWorkbenchStore()
     const unbind = bindUrl(store, PALS, BY_ID)
     store.getState().setSlot('a', 0)
     store.getState().setSlot('b', 1)
-    expect(win.location.hash).toBe('#/b/foxparks+bristla')
-    expect(win.history.replaceState).toHaveBeenCalled()
+    expect(window.location.hash).toBe('#/b/foxparks+bristla')
     unbind()
   })
 
   it('seeds the store from whatever hash is already present when bound', () => {
-    win.location.hash = '#/a/bristla'
+    window.location.hash = '#/a/bristla'
     const store = createWorkbenchStore()
     const unbind = bindUrl(store, PALS, BY_ID)
     expect(store.getState().slotA).toBe(1)
     unbind()
   })
 
-  it('applies a hashchange (back/forward, pasted link) to the store', () => {
+  it('applies an external hashchange (back/forward, pasted link) to the store', () => {
     const store = createWorkbenchStore()
     const unbind = bindUrl(store, PALS, BY_ID)
-    win.location.hash = '#/t/grizzbolt'
-    win.fireHashChange()
+    fireHashChange('#/t/grizzbolt')
     expect(store.getState().target).toBe(2)
     unbind()
   })
@@ -156,10 +153,9 @@ describe('bindUrl', () => {
   it('does not bounce a hashchange-driven store update back into another replaceState call', () => {
     const store = createWorkbenchStore()
     const unbind = bindUrl(store, PALS, BY_ID)
-    const callsBefore = win.history.replaceState.mock.calls.length
-    win.location.hash = '#/t/grizzbolt'
-    win.fireHashChange()
-    expect(win.history.replaceState.mock.calls.length).toBe(callsBefore)
+    const spy = vi.spyOn(window.history, 'replaceState')
+    fireHashChange('#/t/grizzbolt')
+    expect(spy).not.toHaveBeenCalled()
     unbind()
   })
 
@@ -168,12 +164,73 @@ describe('bindUrl', () => {
     const unbind = bindUrl(store, PALS, BY_ID)
     unbind()
 
-    const callsBefore = win.history.replaceState.mock.calls.length
+    const spy = vi.spyOn(window.history, 'replaceState')
     store.getState().setSlot('t', 2)
-    expect(win.history.replaceState.mock.calls.length).toBe(callsBefore)
+    expect(spy).not.toHaveBeenCalled()
 
-    win.location.hash = '#/a/bristla'
-    win.fireHashChange()
+    fireHashChange('#/a/bristla')
     expect(store.getState().slotA).toBeNull()
+  })
+
+  it('does not rewrite a genuinely blank initial hash on bind', () => {
+    const spy = vi.spyOn(window.history, 'replaceState')
+    const store = createWorkbenchStore()
+    const unbind = bindUrl(store, PALS, BY_ID)
+    expect(spy).not.toHaveBeenCalled()
+    expect(window.location.hash).toBe('')
+    unbind()
+  })
+
+  it('round-trips chain mode through a real URL fragment (fragment-safe ~ separator)', () => {
+    const store = createWorkbenchStore()
+    const unbind = bindUrl(store, PALS, BY_ID)
+    store.getState().setSlot('a', 0)
+    store.getState().setSlot('b', 1)
+    store.getState().setSlot('t', 2)
+    expect(window.location.hash).toBe('#/c/foxparks+bristla~grizzbolt')
+    unbind()
+
+    // A fresh load (or a second tab) at that exact address-bar URL.
+    const store2 = createWorkbenchStore()
+    const unbind2 = bindUrl(store2, PALS, BY_ID)
+    expect(store2.getState()).toMatchObject({ slotA: 0, slotB: 1, target: 2 })
+    unbind2()
+  })
+
+  it('self-heals a legacy chain link (old > separator) in the address bar immediately on bind', () => {
+    window.location.hash = '#/c/foxparks>grizzbolt'
+    const store = createWorkbenchStore()
+    const unbind = bindUrl(store, PALS, BY_ID)
+    expect(store.getState()).toMatchObject({ slotA: 0, target: 2 })
+    expect(window.location.hash).toBe('#/c/foxparks~grizzbolt')
+    unbind()
+  })
+
+  it('short-circuits once window.location.hash already matches the canonical hash (Safari replaceState throttling)', () => {
+    const store = createWorkbenchStore()
+    const unbind = bindUrl(store, PALS, BY_ID)
+    store.getState().setSlot('a', 0)
+    store.getState().setSlot('t', 2)
+    expect(window.location.hash).toBe('#/c/foxparks~grizzbolt')
+
+    // Changing chainDepth never touches the URL, so the hash the store would compute hasn't
+    // moved - with the fragment-safe separator, window.location.hash already equals it exactly,
+    // and the equality short-circuit should skip every one of these ten writes.
+    const spy = vi.spyOn(window.history, 'replaceState')
+    for (let i = 0; i < 10; i++) store.getState().setChainDepth(4 + (i % 5))
+    expect(spy).not.toHaveBeenCalled()
+    unbind()
+  })
+
+  it('invokes onWarnings on every parse, including a clean one with an empty array', () => {
+    window.location.hash = '#/b/foxparks+ghostpal'
+    const seen: string[][] = []
+    const store = createWorkbenchStore()
+    const unbind = bindUrl(store, PALS, BY_ID, (w) => seen.push(w))
+    expect(seen).toEqual([["unknown pal id 'ghostpal'"]])
+
+    fireHashChange('#/t/grizzbolt')
+    expect(seen).toEqual([["unknown pal id 'ghostpal'"], []])
+    unbind()
   })
 })
