@@ -60,6 +60,8 @@
 
 ### Task F5: Polish + docs
 
+- [ ] **Carried from F2 quality review + F3 report:** split `nonPalRows` → `playerRows` + `unreadableRows` in parse.ts/ImportResult (3 lines; lets the summary say "guild of N players" honestly); add structured `oddTypes: string[]` + `unknownPals: number` to ImportResult (warnings prose stays as convenience); export ONE shared `buildLowerLookup` helper (url.ts, parse tests, worker client, panel all hand-roll it); worker: hoist `requestId = req?.requestId ?? -1` above the try (undefined event.data currently → unhandled rejection); window-level dragover/drop guard that auto-opens the import panel (page-drop currently navigates the tab away); `closeCharacterMap` helper; codeOf/detailOf shared test util; builder mirror-note names its uncovered surface (wrapper+headers).
+- [ ] **Spec amendment (decided during F3):** the "decompressing → scanning" progress line is CUT — parses complete in seconds; the indeterminate pulse + "READING N MB" line is the shipped behavior. Terminal-only worker protocol stands.
 - [ ] README: MY PALS section (how import works, privacy line — save never leaves the browser; share-link explanation; Xbox limitation; troubleshooting table from ParseError codes).
 - [ ] Import-panel a11y pass (labels, focus flow — mirror SearchPalette patterns) + mobile layout (drop zone full-width, hints collapsible).
 - [ ] Bundle check: `npm run build` → verify ooz-wasm is a separate lazy chunk not in the entry; note sizes in the task report.

@@ -27,7 +27,7 @@ The Oodle (`PlM1`) decompression path requires `ooz-wasm` (GPL-3.0, derived from
 - Header gains **`MY PALS`** button (shows owned count once imported, e.g. `MY PALS · 87`).
 - Clicking opens the **import panel** (same modal pattern as SearchPalette):
   - Empty state: drag-drop zone ("drop Level.sav here") + "browse…" file picker + (Chromium) "find my save folder" via the File System Access API directory picker; per-OS path hints (`%LOCALAPPDATA%\Pal\Saved\SaveGames\<steam-id>\<world-id>\Level.sav`; server: `Pal/Saved/SaveGames/0/<world-id>/Level.sav`).
-  - Parsing state: progress line (decompressing → scanning → done) — parsing runs in a dedicated worker; UI never blocks.
+  - Parsing state: indeterminate pulse + file-size line ("READING 41 MB — Level.sav") — parsing runs in a dedicated worker; UI never blocks. (Amended during F3: staged progress copy cut — parses complete in seconds and the worker protocol stays terminal-only.)
   - Result state: summary card ("87 species · 214 pals · guild of 4 players"), per-species grid with counts, IMPORT AGAIN / CLEAR / SHARE actions.
   - Error states (each with a distinct, plain-language message): wrong file picked (LevelMeta/Players/local); Xbox `CNK0` container; unknown compression magic (game updated — report it); corrupted/truncated; file absurdly large (>500MB → suggest in-game save cleanup).
 - **Share**: `SHARE` produces a link `#/own/<blob>` (deflate+base64url of the compact owned list). Opening such a link on any browser imports the list into localStorage after a confirm ("Load Jacob's guild list — 87 species? Replaces your current list."). Also DOWNLOAD/IMPORT as a small `.palmatch.json` for Discord attachment workflows.
