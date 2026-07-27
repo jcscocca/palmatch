@@ -15,7 +15,7 @@ let dataset: Promise<Dataset> | undefined
 
 async function run(req: ChainRequest): Promise<void> {
   try {
-    dataset ??= loadDataset(import.meta.env.BASE_URL)
+    dataset ??= loadDataset(req.baseUrl)
     const ds = await dataset
     const steps = findChains(ds, req.starters, req.target, req.maxDepth)
     ctx.postMessage({ ok: true, requestId: req.requestId, steps })
