@@ -15,8 +15,10 @@ export interface ParentPassives {
  */
 export interface WorkbenchData {
   /**
-   * Invariant enforced by `setSlot` (see below): `slotB` is never non-null while `slotA` is
-   * null. Readers - the UI, the URL codec - can rely on that and never need to re-derive it.
+   * Invariant enforced at both places state gets written into the store - `setSlot` below for
+   * store-driven writes, and `bindUrl`'s hash-driven writes (`src/state/url.ts`), both by routing
+   * through `normalizeSlots`: `slotB` is never non-null while `slotA` is null. Readers - the UI,
+   * the URL codec's `encodeState` - can rely on that and never need to re-derive it themselves.
    */
   slotA: number | null
   slotB: number | null
@@ -55,10 +57,12 @@ export interface SlotState {
  * play). This is the one place that normalization happens; `modeFor` and the URL codec both
  * build on it so they can't disagree about what "A only" or "chain from B" means.
  *
- * `setSlot` additionally enforces this shape as a store invariant (a lone starter always lands
- * in `slotA`, never `slotB`), so in practice `s.slotB` alone is never what triggers this path.
- * It stays here as a safety net for callers who build `SlotState` by hand (the URL codec parses
- * routes where a `b`-only shape could otherwise arise) rather than through the store.
+ * This same function is what `setSlot` and `bindUrl`'s hash-driven writes both call to enforce
+ * the "lone starter always lands in slotA" store invariant documented on `WorkbenchData.slotA` -
+ * it isn't just a read-side convenience. `parseHash` in particular has no notion of that
+ * invariant (it resolves each id independently, so an unknown *first* id in a `#/b/...` or
+ * `#/c/...` route can hand back a `{slotA: null, slotB: <index>}` shape on its own), so the write
+ * site normalizes before the parsed state ever reaches `store.setState`.
  */
 export function normalizeSlots(s: SlotState): { primary: number | null; secondary: number | null } {
   const primary = s.slotA ?? s.slotB

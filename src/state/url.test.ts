@@ -100,6 +100,19 @@ describe('parseHash edge cases', () => {
     expect(state).toEqual(EMPTY)
     expect(warnings.length).toBeGreaterThan(0)
   })
+
+  it('does not let a length-changing uppercase fold (ß -> "SS") misalign the chain-separator split', () => {
+    // Regression: the separator search used to run on rest.toUpperCase() but slice the original
+    // string. toUpperCase() isn't length-preserving for every character - "ß".toUpperCase() ===
+    // "SS" - so a starter id containing one shifted every index after it in the uppercased copy,
+    // and slicing the original at that shifted index cut it in the wrong place. Searching the
+    // untransformed string keeps the split aligned regardless of what's in the starter id, even
+    // one (like this one) that's bogus and expected to resolve to nothing either way - the point
+    // is that the *target* on the other side of the separator still comes out correct.
+    const { state, warnings } = parseHash('#/c/foßparks~grizzbolt', BY_ID)
+    expect(state).toEqual({ slotA: null, slotB: null, target: 2, tab: null })
+    expect(warnings).toEqual(["unknown pal id 'foßparks'"])
+  })
 })
 
 /**
@@ -231,6 +244,37 @@ describe('bindUrl', () => {
 
     fireHashChange('#/t/grizzbolt')
     expect(seen).toEqual([["unknown pal id 'ghostpal'"], []])
+    unbind()
+  })
+
+  it('normalizes an unknown-FIRST-id pair link so the store never holds the forbidden lone-B shape', () => {
+    // parseHash resolves each id independently: an unknown first id in "#/b/ghostpal+bristla"
+    // hands back {slotA: null, slotB: <bristla>} on its own. Writing that straight into the
+    // store via setState (bypassing setSlot's normalization) would violate the "slotB never held
+    // while slotA is null" invariant - syncFromHash has to normalize before it calls setState.
+    window.location.hash = '#/b/ghostpal+bristla'
+    const store = createWorkbenchStore()
+    const unbind = bindUrl(store, PALS, BY_ID)
+    expect(store.getState()).toMatchObject({ slotA: 1, slotB: null, target: null })
+    expect(window.location.hash).toBe('#/a/bristla')
+    unbind()
+  })
+
+  it('normalizes an unknown-FIRST-id chain link the same way', () => {
+    window.location.hash = '#/c/ghostpal+bristla~grizzbolt'
+    const store = createWorkbenchStore()
+    const unbind = bindUrl(store, PALS, BY_ID)
+    expect(store.getState()).toMatchObject({ slotA: 1, slotB: null, target: 2 })
+    expect(window.location.hash).toBe('#/c/bristla~grizzbolt')
+    unbind()
+  })
+
+  it('normalizes and canonicalizes on a hashchange too, not just at bind time', () => {
+    const store = createWorkbenchStore()
+    const unbind = bindUrl(store, PALS, BY_ID)
+    fireHashChange('#/b/ghostpal+bristla')
+    expect(store.getState()).toMatchObject({ slotA: 1, slotB: null, target: null })
+    expect(window.location.hash).toBe('#/a/bristla')
     unbind()
   })
 })

@@ -34,17 +34,25 @@ function idOf(pals: PalRecord[], index: number): string {
  * `window.location.hash === hash` short-circuit could never match its own un-encoded `>` against
  * the browser's encoded copy, so every store write re-issued a `replaceState` call (a throttling
  * risk in Safari). `~` is unreserved and survives untouched, so it's the separator going forward.
- * Parsing stays tolerant of the old `>` and its browser-mangled `%3E` form so links shared before
- * this fix, or hand-typed with `>`, still resolve - see bindUrl's on-bind canonicalization, which
- * rewrites any of these back to `~` in the address bar immediately.
+ * Parsing stays tolerant of the old `>` and its browser-mangled `%3E`/`%3e` form so links shared
+ * before this fix, or hand-typed with `>`, still resolve - see bindUrl's canonicalization, which
+ * rewrites any of these back to `~` in the address bar as soon as it sees them.
  */
-const CHAIN_SEPARATORS = ['~', '>', '%3E']
+const CHAIN_SEPARATORS = ['~', '>', '%3E', '%3e']
 
+/**
+ * Finds the earliest chain separator in `rest`, by index into `rest` itself. Deliberately does
+ * *not* search a `.toUpperCase()`'d copy for case-insensitivity: `toUpperCase()` isn't
+ * length-preserving for every character (`"ß".toUpperCase() === "SS"`), so a starter id
+ * containing one would shift every index after it, and slicing the *original* `rest` at an index
+ * computed from the transformed copy would cut it in the wrong place. Matching both `%3E` and
+ * `%3e` as separate literal patterns gets case tolerance for the one case-sensitive piece (the
+ * percent-encoded hex digit) without transforming the string at all.
+ */
 function findChainSeparator(rest: string): { index: number; length: number } | null {
-  const upper = rest.toUpperCase()
   let best: { index: number; length: number } | null = null
   for (const sep of CHAIN_SEPARATORS) {
-    const idx = upper.indexOf(sep)
+    const idx = rest.indexOf(sep)
     if (idx !== -1 && (best === null || idx < best.index)) best = { index: idx, length: sep.length }
   }
   return best
@@ -199,12 +207,25 @@ export function bindUrl(
     if (applyingToHash) return
     const { state, warnings } = parseHash(window.location.hash, byId)
     onWarnings?.(warnings)
+    // parseHash resolves each id independently, so an unknown *first* id (e.g. `#/b/ghostpal
+    // +bristla`) can hand back the forbidden {slotA: null, slotB: <index>} shape - parseHash
+    // itself has no notion of the store's lone-B invariant. Route it through normalizeSlots
+    // before it ever reaches setState, same as setSlot does for store-driven writes, so the
+    // invariant holds no matter which of the two write sites put a value in.
+    const { primary, secondary } = normalizeSlots(state)
     applyingFromHash = true
     try {
-      store.setState({ slotA: state.slotA, slotB: state.slotB, target: state.target, tab: state.tab })
+      store.setState({ slotA: primary, slotB: secondary, target: state.target, tab: state.tab })
     } finally {
       applyingFromHash = false
     }
+    // Whatever just got parsed may not have been canonical - an unknown id nulling a slot, a
+    // legacy/mangled chain separator, a lone-B shape from a hand-typed link - so re-derive the
+    // hash from the (now-normalized) store and rewrite the address bar to match immediately.
+    // This runs on every parse, not just the one at bind time, so back/forward navigation and
+    // manual address-bar edits self-heal too, not only the initial page load. The equality
+    // short-circuit in syncToHash means this is a no-op whenever the hash was already canonical.
+    if (window.location.hash !== '') syncToHash()
   }
 
   const syncToHash = (): void => {
@@ -220,14 +241,10 @@ export function bindUrl(
     }
   }
 
-  // A page load or pasted link arrives as an initial hash with no store state yet — seed the
-  // store from it before wiring the ongoing subscriptions.
+  // A page load or pasted link arrives as an initial hash with no store state yet - seed the
+  // store from it (syncFromHash's own canonicalization step then corrects the address bar if
+  // that hash wasn't already canonical) before wiring the ongoing subscriptions.
   syncFromHash()
-  // Then immediately canonicalize whatever's in the address bar: a broken or legacy-separator
-  // link (already parsed above) gets rewritten to the canonical form right away, rather than
-  // waiting on the next store change. Skipped on a genuinely blank hash so a fresh visit with no
-  // route in it doesn't gain a `#/` it never had.
-  if (window.location.hash !== '') syncToHash()
 
   const unsubscribeStore = store.subscribe(syncToHash)
   window.addEventListener('hashchange', syncFromHash)
