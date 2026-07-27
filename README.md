@@ -54,7 +54,11 @@ Pocketpair. Palworld and all game assets © Pocketpair, Inc.
 
 ## License
 
-Code is MIT — see [LICENSE](./LICENSE), © 2026 Jacob Scocca.
+Code is **GPL-3.0-or-later** — see [LICENSE](./LICENSE), © 2026 Jacob Scocca. This repo relicensed
+from MIT because it bundles `ooz-wasm`, a GPL-3.0 WebAssembly build of the reverse-engineered
+Oodle decompressor needed to read save files; GPL's copyleft terms require anything that bundles
+it to also be GPL. Full provenance and credits (palcalc, palpedia.net Discord researchers,
+ooz-wasm/powzix-ooz, pako) live in [ATTRIBUTION.md](./ATTRIBUTION.md).
 
 Game data and art (pal stats, breeding data, sprites, element icons) belong to Pocketpair, Inc. and
 are used here datamined/unofficially for a fan tool; palcalc's own data pipeline and outputs are

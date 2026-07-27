@@ -91,7 +91,14 @@ export function Workbench() {
 
       <footer className="app-footer">
         <p className="label-caps">
-          palcalc {palcalcCommit.slice(0, 7)} · refreshed {refreshedAt.slice(0, 10)}
+          palcalc {palcalcCommit.slice(0, 7)} · refreshed {refreshedAt.slice(0, 10)} ·{' '}
+          <a
+            href="https://github.com/jcscocca/palmatch/blob/main/ATTRIBUTION.md"
+            target="_blank"
+            rel="noreferrer"
+          >
+            GPL-3.0
+          </a>
         </p>
         <p>
           Data &amp; sprites: palcalc (MIT) · Mutation model: community research by the palpedia.net Discord (Dinosaur,
