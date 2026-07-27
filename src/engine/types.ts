@@ -114,6 +114,12 @@ export interface ChainRequest {
   starters: number[]
   target: number
   maxDepth?: number
+  /**
+   * Absolute base URL for dataset fetches, computed on the main thread. The worker cannot use
+   * `import.meta.env.BASE_URL` itself: under `base: './'` that value is relative, and inside a
+   * worker it resolves against the worker chunk's own URL (`…/assets/`), 404ing on Pages deploys.
+   */
+  baseUrl: string
 }
 
 export type ChainResponse =

@@ -25,11 +25,12 @@ function idx(id: string): number {
 }
 
 /** Loads the worker against the stubbed scope and hands back its message port. */
-async function boot(): Promise<(req: ChainRequest) => void> {
+async function boot(): Promise<(req: Omit<ChainRequest, 'baseUrl'>) => void> {
   await import('./chains.worker.ts')
   const handler = scope.onmessage
   if (handler === null) throw new Error('worker never registered a message handler')
-  return (req) => handler({ data: req } as unknown as MessageEvent<ChainRequest>)
+  // baseUrl is irrelevant here (loadDataset is mocked); the real value is main-thread-computed.
+  return (req) => handler({ data: { baseUrl: '/', ...req } } as unknown as MessageEvent<ChainRequest>)
 }
 
 beforeAll(async () => {

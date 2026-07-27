@@ -95,7 +95,13 @@ export function ChainView() {
 
     const debounce = setTimeout(() => {
       inFlightRef.current = { id, depth, strict, expired: false }
-      const request: ChainRequest = { requestId: id, starters, target, maxDepth: depth }
+      const request: ChainRequest = {
+        requestId: id,
+        starters,
+        target,
+        maxDepth: depth,
+        baseUrl: new URL(import.meta.env.BASE_URL, window.location.href).toString(),
+      }
       workerRef.current?.postMessage(request)
       timerRef.current = setTimeout(() => {
         if (inFlightRef.current.id !== id || inFlightRef.current.expired) return
