@@ -63,7 +63,7 @@ function App() {
 
   return (
     <DatasetContext value={state.ds}>
-      <Workbench ds={state.ds} />
+      <Workbench />
     </DatasetContext>
   )
 }

@@ -6,13 +6,17 @@ interface TypeBadgeProps {
   size?: 'sm' | 'md'
 }
 
-/** Element icon + type name. `sm` drops the label (the icon carries `alt`/`title` instead). */
+/**
+ * Element icon + type name. `sm` drops the label, so its icon has to carry the name
+ * (`alt`/`title`); `md` prints the label beside it, which makes the icon decorative.
+ */
 export function TypeBadge({ type, size = 'md' }: TypeBadgeProps) {
   const icon = elementIcon(type)
+  const labelled = size === 'md' || icon === undefined
   return (
     <span className={`type-badge type-badge-${size}`} title={type}>
-      {icon !== undefined && <img className="type-icon" src={assetUrl(icon)} alt={type} loading="lazy" />}
-      {(size === 'md' || icon === undefined) && <span className="type-label">{type}</span>}
+      {icon !== undefined && <img className="type-icon" src={assetUrl(icon)} alt={labelled ? '' : type} loading="lazy" />}
+      {labelled && <span className="type-label">{type}</span>}
     </span>
   )
 }

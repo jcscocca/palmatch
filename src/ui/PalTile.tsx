@@ -8,13 +8,12 @@ export interface PalTileProps {
   size: 'sm' | 'md' | 'lg'
   /** When given, the tile grows a hover/focus action strip that sends this pal to a slot. */
   onPromote?: (slot: 'a' | 'b' | 't') => void
-  showDex?: boolean
 }
 
-const PROMOTE_ACTIONS: Array<{ slot: 'a' | 'b' | 't'; glyph: string; title: string }> = [
-  { slot: 'a', glyph: 'A', title: 'set as Parent A' },
-  { slot: 'b', glyph: 'B', title: 'set as Parent B' },
-  { slot: 't', glyph: '⌖', title: 'set as Target' },
+const PROMOTE_ACTIONS: Array<{ slot: 'a' | 'b' | 't'; glyph: string; label: string }> = [
+  { slot: 'a', glyph: 'A', label: 'set as Parent A' },
+  { slot: 'b', glyph: 'B', label: 'set as Parent B' },
+  { slot: 't', glyph: '⌖', label: 'set as Target' },
 ]
 
 /**
@@ -22,8 +21,12 @@ const PROMOTE_ACTIONS: Array<{ slot: 'a' | 'b' | 't'; glyph: string; title: stri
  * element badges, dex/power caption. Sprites ship for every pal, so the silhouette is a runtime
  * fallback only — tracking the failed `src` rather than a bare boolean means swapping the tile to
  * a different pal retries the image instead of inheriting the previous pal's failure.
+ *
+ * The sprite is `alt=""`: the name is printed right below it, so announcing it twice is noise.
+ * The promote buttons are the tile's only interactive parts, which is why every clickable
+ * container this sits inside is a `role="button"`/`role="option"` element and never a `<button>`.
  */
-export function PalTile({ pal, size, onPromote, showDex = true }: PalTileProps) {
+export function PalTile({ pal, size, onPromote }: PalTileProps) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
   const failed = failedSrc === pal.sprite
 
@@ -38,7 +41,7 @@ export function PalTile({ pal, size, onPromote, showDex = true }: PalTileProps) 
           <img
             className="pal-sprite"
             src={assetUrl(pal.sprite)}
-            alt={pal.name}
+            alt=""
             loading="lazy"
             onError={() => setFailedSrc(pal.sprite)}
           />
@@ -52,21 +55,20 @@ export function PalTile({ pal, size, onPromote, showDex = true }: PalTileProps) 
             <TypeBadge key={type} type={type} size={size === 'lg' ? 'md' : 'sm'} />
           ))}
         </div>
-        {showDex && (
-          <div className="pal-caption">
-            #{pal.dex} · r{pal.power}
-          </div>
-        )}
+        <div className="pal-caption">
+          #{pal.dex} · r{pal.power}
+        </div>
       </div>
 
       {onPromote !== undefined && (
         <div className="promote-strip">
-          {PROMOTE_ACTIONS.map(({ slot, glyph, title }) => (
+          {PROMOTE_ACTIONS.map(({ slot, glyph, label }) => (
             <button
               key={slot}
               type="button"
               className="promote-btn"
-              title={`${title} (${pal.name})`}
+              title={`${label} (${pal.name})`}
+              aria-label={`${label} (${pal.name})`}
               onClick={(e) => {
                 e.stopPropagation()
                 onPromote(slot)
