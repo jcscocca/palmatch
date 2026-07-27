@@ -144,16 +144,17 @@ describe('readCharacterFields', () => {
       characterId: 'CatMage',
       talents: { hp: 1, shot: 2, defense: 3 },
       clutter: true,
-      isPlayer: false,
+      isPlayer: true,
     })
-    // IsPlayer is written after the array, so reading it at all proves we came out the far side in
-    // the right place — not just that nothing threw.
+    // IsPlayer is written after the array AND set to true — the non-default value. A desync that
+    // skips past it silently would leave the default false, so this expectation is load-bearing;
+    // asserting false here would be indistinguishable from never reading the field at all.
     expect(readCharacterFields(raw, 'status-list')).toEqual({
       characterId: 'CatMage',
       gender: 'F',
       passives: [],
       talents: { hp: 1, shot: 2, defense: 3 },
-      isPlayer: false,
+      isPlayer: true,
       oddTypes: [],
     })
   })
