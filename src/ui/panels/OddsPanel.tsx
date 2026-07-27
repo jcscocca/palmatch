@@ -180,6 +180,9 @@ export function OddsPanel({ a, b }: OddsPanelProps) {
         <p className="odds-caveat">
           Estimate: direct inheritance only; random-fill passives and cake modifiers not modeled.
         </p>
+        <p className="odds-caveat">
+          IVs inherit independently per stat: 30% father · 30% mother · 40% random roll.
+        </p>
       </div>
     </div>
   )
