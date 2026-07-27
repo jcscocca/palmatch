@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import type { KeyboardEvent } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 import { modeFor, useWorkbenchStore } from '../../state/store.ts'
 import { useDataset } from '../dataset-context.ts'
 import { MODE_TABS, TAB_LABELS, activeTabFor } from '../tabs.ts'
@@ -69,25 +69,36 @@ export function ResultTabs() {
     document.getElementById(`tab-${tabs[next]}`)?.focus()
   }
 
+  // Each tab belongs to a mode, and every mode fills the slots its tabs read — the `null` guards
+  // below are there for the type checker, not for a state the workbench can actually be in. The
+  // two `ComboTable`s are keyed so switching tabs mounts a fresh one: without that, React reuses
+  // the instance and the filter typed into one tab silently narrows the other.
   const pair = slotA !== null && slotB !== null ? { a: slotA, b: slotB } : null
-  const body =
-    activeTab === 'child' && pair !== null ? (
-      <ChildCard a={pair.a} b={pair.b} />
-    ) : activeTab === 'mutations' && pair !== null ? (
-      <MutationPanel a={pair.a} b={pair.b} />
-    ) : activeTab === 'passive-odds' && pair !== null ? (
-      <OddsPanel a={pair.a} b={pair.b} />
-    ) : activeTab === 'all-a-combos' && slotA !== null ? (
-      <ComboTable rows={aRows} cap={COMBO_CAP} />
-    ) : activeTab === 'parent-combos' ? (
-      <ComboTable rows={parentRows} cap={COMBO_CAP} />
-    ) : activeTab === 'via-mutation' && target !== null ? (
-      <ViaMutation target={target} />
-    ) : activeTab === 'chains' ? (
-      <ChainView />
-    ) : (
-      <p className="panel-note">pick pals to begin — a parent, a pair, or a target</p>
-    )
+  const body = ((): ReactNode => {
+    switch (activeTab) {
+      case null:
+        return <p className="panel-note">pick pals to begin — a parent, a pair, or a target</p>
+      case 'child':
+        return pair === null ? null : <ChildCard a={pair.a} b={pair.b} />
+      case 'mutations':
+        return pair === null ? null : <MutationPanel a={pair.a} b={pair.b} />
+      case 'passive-odds':
+        return pair === null ? null : <OddsPanel a={pair.a} b={pair.b} />
+      case 'all-a-combos':
+        return slotA === null ? null : <ComboTable key={activeTab} rows={aRows} cap={COMBO_CAP} />
+      case 'parent-combos':
+        return <ComboTable key={activeTab} rows={parentRows} cap={COMBO_CAP} />
+      case 'via-mutation':
+        return target === null ? null : <ViaMutation target={target} />
+      case 'chains':
+        return <ChainView />
+      default: {
+        // Every `TabId` is handled above; adding one without a panel stops compiling here.
+        const unreachable: never = activeTab
+        return unreachable
+      }
+    }
+  })()
 
   return (
     <section className="results">

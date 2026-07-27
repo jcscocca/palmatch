@@ -99,18 +99,28 @@ describe('ChainView', () => {
     expect(screen.getAllByText('Relaxaurus Lux').length).toBeGreaterThan(0)
   })
 
-  it('ignores a reply carrying a stale request id', async () => {
+  it('ignores the answer to the question the previous slots asked', async () => {
     useWorkbenchStore.getState().setSlot('a', idx('Lamball'))
     useWorkbenchStore.getState().setSlot('t', idx('Grizzbolt'))
     show()
 
     const worker = await pending()
-    const request = worker.posted[0]
-    worker.reply({ ok: true, requestId: request.requestId + 99, steps: [] })
-    expect(screen.getByLabelText('searching for a chain')).toBeTruthy()
+    const stale = worker.posted[0].requestId
 
-    worker.reply({ ok: true, requestId: request.requestId, steps: [] })
-    expect(screen.getByText('already have it — Grizzbolt is among your starters')).toBeTruthy()
+    // The target changes and the old answer lands inside the debounce window — the screen is
+    // already showing the new target, so rendering it would attribute a Grizzbolt chain to
+    // Relaxaurus Lux.
+    act(() => {
+      useWorkbenchStore.getState().setSlot('t', idx('Relaxaurus Lux'))
+    })
+    worker.reply({ ok: true, requestId: stale, steps: [] })
+    expect(screen.getByLabelText('searching for a chain')).toBeTruthy()
+    expect(screen.queryByText(/already have it/)).toBeNull()
+
+    await waitFor(() => expect(worker.posted).toHaveLength(2))
+    expect(worker.posted[1].requestId).toBeGreaterThan(stale)
+    worker.reply({ ok: true, requestId: worker.posted[1].requestId, steps: [] })
+    expect(screen.getByText('already have it — Relaxaurus Lux is among your starters')).toBeTruthy()
   })
 
   it('explains the strict semantics when two starters find no path', async () => {
@@ -143,7 +153,7 @@ describe('ChainView', () => {
     expect(worker.posted[1].maxDepth).toBe(depth + 1)
   })
 
-  it('surfaces a worker error with a retry', async () => {
+  it('retries on a fresh worker, since the failed one may never answer again', async () => {
     useWorkbenchStore.getState().setSlot('a', idx('Lamball'))
     useWorkbenchStore.getState().setSlot('t', idx('Grizzbolt'))
     show()
@@ -153,7 +163,10 @@ describe('ChainView', () => {
     expect(screen.getByText('failed to fetch /data/pals.json')).toBeTruthy()
 
     fireEvent.click(screen.getByText('RETRY'))
-    await waitFor(() => expect(worker.posted).toHaveLength(2))
+    await waitFor(() => expect(workers).toHaveLength(2))
+    expect(worker.terminated).toBe(true)
+    await waitFor(() => expect(workers[1].posted).toHaveLength(1))
+    expect(worker.posted).toHaveLength(1)
   })
 
   it('terminates its worker on unmount', async () => {

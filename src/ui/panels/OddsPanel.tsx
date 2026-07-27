@@ -1,15 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { passiveOdds } from '../../engine/passives.ts'
 import type { PassiveRecord } from '../../engine/types.ts'
+import { percent } from '../../lib/format.ts'
 import { MAX_PARENT_PASSIVES, useWorkbenchStore } from '../../state/store.ts'
 import { useDataset } from '../dataset-context.ts'
 
 /** Enough to pick from without turning the panel into a scrolling list of 114 passives. */
 const OPTION_LIMIT = 6
-
-function percent(p: number): string {
-  return `${+(p * 100).toFixed(1)}%`
-}
 
 interface PassivePickerProps {
   side: 'a' | 'b'
@@ -111,13 +108,15 @@ export function OddsPanel({ a, b }: OddsPanelProps) {
     [parentPassives.a, parentPassives.b],
   )
 
+  // The single place the desired set is reconciled with the pool: dropping a parent's passive
+  // drops it from the store here, and everything below just reads `desired` back. Filtering it a
+  // second time at render would be a second answer to the same question.
   useEffect(() => {
     const pruned = desired.filter((id) => union.includes(id))
     if (pruned.length !== desired.length) setDesiredPassives(pruned)
   }, [desired, setDesiredPassives, union])
 
-  const inPool = desired.filter((id) => union.includes(id))
-  const odds = passiveOdds(union.length, inPool.length)
+  const odds = passiveOdds(union.length, desired.length)
 
   return (
     <div className="odds-panel">
@@ -150,10 +149,10 @@ export function OddsPanel({ a, b }: OddsPanelProps) {
               <button
                 key={id}
                 type="button"
-                className={`chip-text${inPool.includes(id) ? ' chip-on' : ''}`}
-                aria-pressed={inPool.includes(id)}
+                className={`chip-text${desired.includes(id) ? ' chip-on' : ''}`}
+                aria-pressed={desired.includes(id)}
                 onClick={() =>
-                  setDesiredPassives(inPool.includes(id) ? inPool.filter((x) => x !== id) : [...inPool, id])
+                  setDesiredPassives(desired.includes(id) ? desired.filter((x) => x !== id) : [...desired, id])
                 }
               >
                 {nameOf(id)}
@@ -164,7 +163,7 @@ export function OddsPanel({ a, b }: OddsPanelProps) {
       </div>
 
       <div className="result-card odds-card">
-        {union.length === 0 || inPool.length === 0 ? (
+        {union.length === 0 || desired.length === 0 ? (
           <p className="panel-note">
             {union.length === 0 ? 'no passives declared yet' : 'pick which pooled passives you want'}
           </p>
@@ -172,7 +171,7 @@ export function OddsPanel({ a, b }: OddsPanelProps) {
           <>
             <div className="odds-big">{percent(odds)}</div>
             <p className="cond-line">
-              P(child directly inherits all {inPool.length} of {union.length} pooled passives)
+              P(child directly inherits all {desired.length} of {union.length} pooled passives)
             </p>
           </>
         )}

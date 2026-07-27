@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { searchPals } from '../engine/search.ts'
-import { TYPE_TO_ELEMENT } from '../lib/elements.ts'
 import { useWorkbenchStore } from '../state/store.ts'
 import { useDataset } from './dataset-context.ts'
 import { PalTile } from './PalTile.tsx'
-import { TypeBadge } from './TypeBadge.tsx'
+import { TypeChips } from './TypeChips.tsx'
 
 export interface SearchPaletteProps {
   /** Slot the palette was opened for; `null` means it was opened generally (Enter lands on A). */
@@ -13,7 +12,6 @@ export interface SearchPaletteProps {
   onClose: () => void
 }
 
-const TYPES = Object.keys(TYPE_TO_ELEMENT)
 const DIGIT_SLOTS: Record<string, 'a' | 'b' | 't'> = { '1': 'a', '2': 'b', '3': 't' }
 const LISTBOX_ID = 'palette-listbox'
 
@@ -187,20 +185,7 @@ export function SearchPalette({ forSlot, onClose }: SearchPaletteProps) {
           }}
         />
 
-        <div className="chip-row">
-          {TYPES.map((type) => (
-            <button
-              key={type}
-              type="button"
-              className={`chip${typeFilter.includes(type) ? ' chip-on' : ''}`}
-              aria-label={`filter ${type}`}
-              aria-pressed={typeFilter.includes(type)}
-              onClick={() => toggleType(type)}
-            >
-              <TypeBadge type={type} size="sm" />
-            </button>
-          ))}
-        </div>
+        <TypeChips selected={typeFilter} onToggle={toggleType} />
 
         <ul className="result-list" id={LISTBOX_ID} role="listbox" aria-label="search results">
           {results.map((index, row) => (

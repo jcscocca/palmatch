@@ -1,7 +1,7 @@
-import type { Mode } from '../state/store.ts'
+import type { Mode, TabId } from '../state/store.ts'
 
-/** Tab ids per mode. Ids match `/^[a-z-]+$/` — they are written into the URL fragment verbatim. */
-export const MODE_TABS: Record<Mode, string[]> = {
+/** Which tabs each mode offers, in display order. The ids themselves are declared in the store. */
+export const MODE_TABS: Record<Mode, TabId[]> = {
   empty: [],
   'a-only': ['all-a-combos'],
   pair: ['child', 'mutations', 'passive-odds', 'all-a-combos'],
@@ -9,7 +9,7 @@ export const MODE_TABS: Record<Mode, string[]> = {
   chain: ['chains'],
 }
 
-export const TAB_LABELS: Record<string, string> = {
+export const TAB_LABELS: Record<TabId, string> = {
   child: 'CHILD',
   mutations: 'MUTATIONS',
   'passive-odds': 'PASSIVE ODDS',
@@ -24,7 +24,7 @@ export const TAB_LABELS: Record<string, string> = {
  * `null` only for `empty`, which has no tabs at all. A stored tab that doesn't survive this is
  * written back to `null` by the Workbench so the URL and the screen can't disagree.
  */
-export function activeTabFor(mode: Mode, tab: string | null): string | null {
+export function activeTabFor(mode: Mode, tab: TabId | null): TabId | null {
   const tabs = MODE_TABS[mode]
   if (tab !== null && tabs.includes(tab)) return tab
   return tabs[0] ?? null

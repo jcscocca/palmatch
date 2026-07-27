@@ -15,6 +15,19 @@ type ChainState =
   | { status: 'error'; message: string }
 
 /**
+ * The one request whose answer is currently worth rendering, and the question it asked. Id and
+ * question travel together so they cannot drift apart, and `expired` covers the two windows where
+ * *no* answer is acceptable: between a slot change and the debounced post that follows it, and
+ * after a request has timed out.
+ */
+interface InFlight {
+  id: number
+  depth: number
+  strict: boolean
+  expired: boolean
+}
+
+/**
  * Step-by-step breeding paths, computed in `chains.worker.ts` so a deep search can't freeze the
  * page. Every reply carries the id of the request it answers: slots change faster than searches
  * finish, and an answer to a workbench the player has already moved on from is dropped rather
@@ -30,8 +43,7 @@ export function ChainView() {
   const setSlot = useWorkbenchStore((s) => s.setSlot)
 
   const workerRef = useRef<Worker | null>(null)
-  const requestIdRef = useRef(0)
-  const askedRef = useRef<{ depth: number; strict: boolean }>({ depth, strict: false })
+  const inFlightRef = useRef<InFlight>({ id: 0, depth, strict: false, expired: true })
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<ChainState>({ status: 'loading' })
@@ -42,21 +54,26 @@ export function ChainView() {
     timerRef.current = null
   }, [])
 
+  // Rebuilt on RETRY as well as on mount: the worker is single-threaded, so a search that timed
+  // out is still chewing on the old question and would make the retry queue behind it, and a
+  // worker that failed to start never answers anything again. Both are only fixed by a new one.
   useEffect(() => {
     const worker = new Worker(new URL('../../engine/chains.worker.ts', import.meta.url), { type: 'module' })
     workerRef.current = worker
     worker.onmessage = (event: MessageEvent<ChainResponse>) => {
-      const res = event.data
-      if (res.requestId !== requestIdRef.current) return
+      const inFlight = inFlightRef.current
+      if (inFlight.expired || event.data.requestId !== inFlight.id) return
       clearTimer()
+      inFlightRef.current = { ...inFlight, expired: true }
       setState(
-        res.ok
-          ? { status: 'done', steps: res.steps, depth: askedRef.current.depth, strict: askedRef.current.strict }
-          : { status: 'error', message: res.error },
+        event.data.ok
+          ? { status: 'done', steps: event.data.steps, depth: inFlight.depth, strict: inFlight.strict }
+          : { status: 'error', message: event.data.error },
       )
     }
     worker.onerror = (event: ErrorEvent) => {
       clearTimer()
+      inFlightRef.current = { ...inFlightRef.current, expired: true }
       setState({ status: 'error', message: event.message === '' ? 'the chain worker failed to start' : event.message })
     }
     return () => {
@@ -64,25 +81,29 @@ export function ChainView() {
       worker.terminate()
       workerRef.current = null
     }
-  }, [clearTimer])
+  }, [attempt, clearTimer])
 
   useEffect(() => {
     if (slotA === null || target === null) return
     const starters = slotB === null ? [slotA] : [slotA, slotB]
+    const strict = starters.length > 1
+    // Expire *here*, not in the debounce callback below: for the next 150ms the screen is already
+    // showing the new slots, so an answer to the question the old ones asked must not land.
+    const id = inFlightRef.current.id + 1
+    inFlightRef.current = { id, depth, strict, expired: true }
     setState({ status: 'loading' })
+
     const debounce = setTimeout(() => {
-      const requestId = requestIdRef.current + 1
-      requestIdRef.current = requestId
-      askedRef.current = { depth, strict: starters.length > 1 }
-      const request: ChainRequest = { requestId, starters, target, maxDepth: depth }
+      inFlightRef.current = { id, depth, strict, expired: false }
+      const request: ChainRequest = { requestId: id, starters, target, maxDepth: depth }
       workerRef.current?.postMessage(request)
       timerRef.current = setTimeout(() => {
-        if (requestIdRef.current !== requestId) return
-        // Nothing is coming; invalidate the id so a late reply can't overwrite the error.
-        requestIdRef.current = requestId + 1
+        if (inFlightRef.current.id !== id || inFlightRef.current.expired) return
+        inFlightRef.current = { ...inFlightRef.current, expired: true }
         setState({ status: 'error', message: 'the chain search did not answer within 5 seconds' })
       }, TIMEOUT_MS)
     }, DEBOUNCE_MS)
+
     return () => {
       clearTimeout(debounce)
       clearTimer()

@@ -1,19 +1,19 @@
 import type { StoreApi, UseBoundStore } from 'zustand'
 import type { PalRecord } from '../engine/types.ts'
-import { modeFor, normalizeSlots } from './store.ts'
-import type { WorkbenchState } from './store.ts'
+import { isTabId, modeFor, normalizeSlots } from './store.ts'
+import type { TabId, WorkbenchState } from './store.ts'
 
 export interface UrlState {
   slotA: number | null
   slotB: number | null
   target: number | null
   /**
-   * Active result-tab id, written into the hash unescaped as `@<tab>`. Tab ids come from this
-   * app's own tab definitions, never user text, so the contract is enforced by convention: they
-   * must match `/^[a-z-]+$/` (lowercase letters and hyphens only) so they can never collide with
-   * `~`, `+`, `@`, or `/` - the characters the rest of the grammar depends on.
+   * Active result-tab id, written into the hash unescaped as `@<tab>`. Ids come from the app's own
+   * `TAB_IDS`, never user text, and match `/^[a-z-]+$/` (lowercase letters and hyphens only) so
+   * they can never collide with `~`, `+`, `@`, or `/` - the characters the rest of the grammar
+   * depends on. A hand-edited hash naming something else parses back as `null`.
    */
-  tab: string | null
+  tab: TabId | null
 }
 
 const EMPTY_STATE: UrlState = { slotA: null, slotB: null, target: null, tab: null }
@@ -68,7 +68,7 @@ function findChainSeparator(rest: string): { index: number; length: number } | n
  */
 export function encodeState(s: UrlState, pals: PalRecord[]): string {
   const mode = modeFor(s)
-  const tabSuffix = s.tab !== null && s.tab !== '' ? `@${s.tab}` : ''
+  const tabSuffix = s.tab === null ? '' : `@${s.tab}`
   const { primary, secondary } = normalizeSlots(s)
 
   if (mode === 'empty') return '#/'
@@ -125,10 +125,13 @@ export function parseHash(hash: string, byId: Map<string, number>): ParseResult 
   }
 
   let body = withoutHash
-  let tab: string | null = null
+  let tab: TabId | null = null
   const at = body.lastIndexOf('@')
   if (at !== -1) {
-    tab = body.slice(at + 1) || null
+    // An id this build doesn't have — an older link, a typo — is dropped rather than carried as a
+    // tab nothing can select. The rest of the route still loads.
+    const raw = body.slice(at + 1)
+    tab = isTabId(raw) ? raw : null
     body = body.slice(0, at)
   }
 

@@ -10,6 +10,30 @@ export interface ParentPassives {
 }
 
 /**
+ * Every result tab that exists, in no particular order — `src/ui/tabs.ts` owns which of them each
+ * mode offers and what they are called. Declared here, beside `Mode`, because the store and the
+ * URL codec both have to name them: keeping the vocabulary in `state/` is what lets `ui/` depend
+ * on `state/` and never the other way round.
+ *
+ * Ids are written into the URL fragment verbatim, so they must match `/^[a-z-]+$/`.
+ */
+export const TAB_IDS = [
+  'child',
+  'mutations',
+  'passive-odds',
+  'all-a-combos',
+  'parent-combos',
+  'via-mutation',
+  'chains',
+] as const
+
+export type TabId = (typeof TAB_IDS)[number]
+
+export function isTabId(value: string): value is TabId {
+  return (TAB_IDS as readonly string[]).includes(value)
+}
+
+/**
  * Plain state, no actions. Split out from `WorkbenchState` so `initialState()` can return this
  * shape directly instead of hand-listing every action key to omit from the full interface.
  */
@@ -24,7 +48,7 @@ export interface WorkbenchData {
   slotB: number | null
   target: number | null
   /** Active result tab id; null means "default tab for the current mode". */
-  tab: string | null
+  tab: TabId | null
   chainDepth: number
   /** Passive ids the player has declared for each parent, max 4 each. */
   parentPassives: ParentPassives
@@ -33,7 +57,7 @@ export interface WorkbenchData {
 
 export interface WorkbenchActions {
   setSlot(slot: 'a' | 'b' | 't', v: number | null): void
-  setTab(tab: string | null): void
+  setTab(tab: TabId | null): void
   setChainDepth(d: number): void
   setParentPassives(side: 'a' | 'b', ids: string[]): void
   setDesiredPassives(ids: string[]): void

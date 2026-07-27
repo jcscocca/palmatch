@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { findParents } from '../../engine/breed.ts'
 import { loadDatasetFromDisk } from '../../engine/dataset.ts'
@@ -90,6 +90,22 @@ describe('ResultTabs', () => {
     const count = findParents(ds, target).length
     expect(screen.getByRole('tab', { name: `PARENT COMBOS (${count})` })).toBeTruthy()
     expect(screen.getByText(`${count} combos`)).toBeTruthy()
+  })
+
+  it('does not carry a combo filter from one tab into another', () => {
+    useWorkbenchStore.getState().setSlot('t', idx('Relaxaurus Lux'))
+    show()
+    fireEvent.change(screen.getByLabelText('filter combos by pal name'), { target: { value: 'sparkit' } })
+
+    // Both tabs render a ComboTable; unkeyed, React would hand the next one the same instance —
+    // and its filter — which is what a shared link or a back/forward step lands on.
+    act(() => {
+      useWorkbenchStore.getState().setSlot('t', null)
+      useWorkbenchStore.getState().setSlot('a', idx('Lamball'))
+    })
+
+    expect(screen.getByRole('tab', { name: 'ALL A-COMBOS' }).getAttribute('aria-selected')).toBe('true')
+    expect((screen.getByLabelText('filter combos by pal name') as HTMLInputElement).value).toBe('')
   })
 
   it('prompts for pals when nothing is picked', () => {

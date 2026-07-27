@@ -405,13 +405,50 @@ button {
   white-space: nowrap;
 }
 
-.badge-accent {
+/*
+ * The one "selected" treatment, shared by result badges, type chips and passive chips. Each
+ * selector keeps its own specificity, so listing `.chip-text.chip-on` here still outranks the
+ * plain `.chip-text` colour further down the file.
+ */
+.badge-accent,
+.chip-on,
+.chip-text.chip-on {
   border-color: var(--accent);
   background: var(--accent-bg);
   color: var(--accent);
 }
 
+/* ---- form fields ---- */
+
+/* Inputs and selects share their chrome; only padding and size differ per place. */
+.palette-input,
+.filter-input,
+.depth-select {
+  border: 2px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.palette-input:focus,
+.filter-input:focus,
+.depth-select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.filter-input:disabled {
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
 /* ---- combo table ---- */
+
+.combo-panel,
+.chain-view {
+  display: flex;
+  flex-direction: column;
+}
 
 .filter-bar {
   display: flex;
@@ -424,21 +461,7 @@ button {
 .filter-input {
   flex: 1 1 220px;
   padding: 7px 10px;
-  border: 2px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
   font-size: 12px;
-}
-
-.filter-input:focus {
-  border-color: var(--accent);
-  outline: none;
-}
-
-.filter-input:disabled {
-  color: var(--text-dim);
-  cursor: not-allowed;
 }
 
 .table-scroll {
@@ -539,10 +562,6 @@ button {
 
 .depth-select {
   padding: 5px 8px;
-  border: 2px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
   font-size: 12px;
 }
 
@@ -743,12 +762,6 @@ button {
   color: var(--accent);
 }
 
-.chip-text.chip-on {
-  border-color: var(--accent);
-  background: var(--accent-bg);
-  color: var(--accent);
-}
-
 .odds-card {
   align-items: flex-start;
   gap: 6px;
@@ -828,16 +841,7 @@ button {
 
 .palette-input {
   padding: 9px 10px;
-  border: 2px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
   font-size: 14px;
-}
-
-.palette-input:focus {
-  border-color: var(--accent);
-  outline: none;
 }
 
 .chip-row {
@@ -857,11 +861,6 @@ button {
   border: none;
   background: none;
   padding: 2px;
-}
-
-.chip-on {
-  border-color: var(--accent);
-  background: var(--accent-bg);
 }
 
 .result-list {

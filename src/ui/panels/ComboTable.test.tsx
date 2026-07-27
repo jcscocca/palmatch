@@ -53,7 +53,7 @@ describe('ComboTable', () => {
     expect(screen.getByText('SAME SPECIES')).toBeTruthy()
   })
 
-  it('filters by name against either parent', () => {
+  it('narrows the table by name, matching any pal in the row', () => {
     const rows = comboRowsFor(ds, idx('Lamball'))
     show(rows)
     expect(bodyRows()).toHaveLength(rows.length)
@@ -66,6 +66,28 @@ describe('ComboTable', () => {
     expect(narrowed.length).toBeLessThan(rows.length)
     for (const row of narrowed) expect(row.textContent).toContain('Foxparks')
     expect(screen.getByText(`${narrowed.length} combos of ${rows.length}`)).toBeTruthy()
+  })
+
+  it('matches the child cell too, wherever the child column is shown', () => {
+    show(comboRowsFor(ds, idx('Lamball')))
+    fireEvent.change(screen.getByLabelText('filter combos by pal name'), { target: { value: 'lifmunk' } })
+
+    // Lamball × Lifmunk qualifies on a parent; Lamball × Fuack → Lifmunk on its child alone, and
+    // dropping that row would be hiding the answer to "what makes a Lifmunk".
+    const narrowed = bodyRows()
+    for (const row of narrowed) expect(row.textContent).toContain('Lifmunk')
+    expect(narrowed.some((row) => row.textContent?.includes('Fuack'))).toBe(true)
+  })
+
+  it('leaves a parent-combos table matching on its parents only', () => {
+    const rows = parentRowsFor(ds, idx('Relaxaurus Lux'))
+    show(rows)
+    expect(screen.queryByText('CHILD')).toBeNull()
+
+    // Every row here makes Relaxaurus Lux, but no row shows it as a child, so the name only hits
+    // the two rows that carry it as a parent.
+    fireEvent.change(screen.getByLabelText('filter combos by pal name'), { target: { value: 'relaxaurus lux' } })
+    expect(bodyRows()).toHaveLength(1)
   })
 
   it('filters by type chip and reports an empty result rather than an empty table', () => {

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { mutationPool } from '../../engine/mutation.ts'
+import { percent } from '../../lib/format.ts'
 import { useWorkbenchStore } from '../../state/store.ts'
 import { useDataset } from '../dataset-context.ts'
 import { PalTile } from '../PalTile.tsx'
@@ -8,10 +9,6 @@ import { mutationRowsFor } from './combo-rows.ts'
 
 /** Rows past this are summarised instead of rendered — a common rank has thousands of pairs. */
 const VIA_MUTATION_CAP = 100
-
-function percent(x: number): string {
-  return `${+(x * 100).toFixed(1)}%`
-}
 
 /** Pool weights run down to fractions of a percent; rounding those to `0%` would read as never. */
 function weightLabel(weight: number): string {
