@@ -60,6 +60,7 @@
 
 ### Task F5: Polish + docs
 
+- [ ] **From F3 spec review:** bound decodeOwnedShare's decompressed output (hostile `#/own/` link can inflate ~12MB on the main thread today) — extract a shared bounded-inflate helper (src/lib/) used by both the share codec and wrapper.ts's inflateOnce, or cap via pako streaming with limit; add truncated-deflate-stream tamper case.
 - [ ] **Carried from F2 quality review + F3 report:** split `nonPalRows` → `playerRows` + `unreadableRows` in parse.ts/ImportResult (3 lines; lets the summary say "guild of N players" honestly); add structured `oddTypes: string[]` + `unknownPals: number` to ImportResult (warnings prose stays as convenience); export ONE shared `buildLowerLookup` helper (url.ts, parse tests, worker client, panel all hand-roll it); worker: hoist `requestId = req?.requestId ?? -1` above the try (undefined event.data currently → unhandled rejection); window-level dragover/drop guard that auto-opens the import panel (page-drop currently navigates the tab away); `closeCharacterMap` helper; codeOf/detailOf shared test util; builder mirror-note names its uncovered surface (wrapper+headers).
 - [ ] **Spec amendment (decided during F3):** the "decompressing → scanning" progress line is CUT — parses complete in seconds; the indeterminate pulse + "READING N MB" line is the shipped behavior. Terminal-only worker protocol stands.
 - [ ] README: MY PALS section (how import works, privacy line — save never leaves the browser; share-link explanation; Xbox limitation; troubleshooting table from ParseError codes).
