@@ -42,7 +42,7 @@ export interface ToastsProps {
 export function Toasts({ toasts, onDismiss }: ToastsProps) {
   if (toasts.length === 0) return null
   return (
-    <div className="toast-stack" aria-live="polite">
+    <div className="toast-stack">
       {toasts.map((toast) => (
         <Toast key={toast.id} toast={toast} onDismiss={onDismiss} />
       ))}
