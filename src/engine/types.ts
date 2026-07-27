@@ -1,3 +1,9 @@
+/**
+ * Matrix cell value for the one pair whose child depends on which parent is female. Part of the
+ * artifact contract: the pipeline writes it, the engine branches on it.
+ */
+export const GENDER_SENTINEL = 0xffff
+
 export interface PalRecord {
   /** palcalc InternalName, e.g. `CatMage`. Stable across game versions; the dataset is sorted by it. */
   id: string
@@ -75,9 +81,24 @@ export interface Dataset {
 /** `gender-AF`/`gender-AM` name the gender required of the *stored* A-side parent, not the caller's. */
 export type BreedCondition = 'standard' | 'unique' | 'same-species' | 'gender-AF' | 'gender-AM'
 
+/** Which parent must be which gender. Carries ids so the UI never re-derives the stored orientation. */
+export interface GenderLock {
+  aId: string
+  aGender: GenderCode
+  bId: string
+  bGender: GenderCode
+}
+
 export interface BreedResult {
   child: number
   condition: BreedCondition
+  /** Present exactly when `condition` is `gender-AF` or `gender-AM`. */
+  lock?: GenderLock
+}
+
+export interface ComboEntry {
+  partner: number
+  results: BreedResult[]
 }
 
 export type ComboBadge = 'unique' | 'same-species' | 'gender-locked'

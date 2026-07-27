@@ -1,6 +1,6 @@
+import { GENDER_SENTINEL } from '../../src/engine/types.ts'
 import { TYPE_TO_ELEMENT } from '../../src/lib/elements.ts'
 import {
-  GENDER_SENTINEL,
   GOLDEN_PAIR_COUNT,
   GOLDEN_SAME_SPECIES_COUNT,
   MATRIX_UNSET,

@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { GENDER_SENTINEL } from '../../src/engine/types.ts'
 import { SYNTHETIC_TYPES, syntheticDb, syntheticEntries } from './__fixtures__/synthetic.ts'
 import {
-  GENDER_SENTINEL,
   GOLDEN_PAIR_COUNT,
   GOLDEN_SAME_SPECIES_COUNT,
   MATRIX_UNSET,

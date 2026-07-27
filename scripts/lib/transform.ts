@@ -1,7 +1,8 @@
+import { GENDER_SENTINEL } from '../../src/engine/types.ts'
 import type { RawUnique } from './palpedia-extract.ts'
 
+/** Build-time only: every cell must be filled before the artifact ships, so this never survives. */
 export const MATRIX_UNSET = 0xfffe
-export const GENDER_SENTINEL = 0xffff
 export const GOLDEN_SEED = 0x9e3779b9
 export const GOLDEN_PAIR_COUNT = 500
 export const GOLDEN_SAME_SPECIES_COUNT = 20

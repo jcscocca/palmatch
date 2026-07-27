@@ -20,6 +20,14 @@ function trimSlash(path: string): string {
   return path.endsWith('/') ? path.slice(0, -1) : path
 }
 
+/** A truncated artifact gives an odd byteLength, which would otherwise be a bare RangeError. */
+function toMatrix(buffer: ArrayBuffer, source: string): Uint16Array {
+  if (buffer.byteLength % 2 !== 0) {
+    throw new Error(`failed to read ${source}: ${buffer.byteLength} bytes is not a whole number of Uint16 cells`)
+  }
+  return new Uint16Array(buffer)
+}
+
 function assemble(
   palsFile: PalsFile,
   matrix: Uint16Array,
@@ -42,11 +50,11 @@ function assemble(
   }
 }
 
-async function fetchData(base: string, file: string): Promise<Response> {
+async function fetchData(fetchFn: typeof fetch, base: string, file: string): Promise<Response> {
   const url = `${base}/data/${file}`
   let res: Response
   try {
-    res = await fetch(url)
+    res = await fetchFn(url)
   } catch (cause) {
     throw new Error(`failed to fetch ${url}`, { cause })
   }
@@ -54,8 +62,8 @@ async function fetchData(base: string, file: string): Promise<Response> {
   return res
 }
 
-async function fetchJson<T>(base: string, file: string): Promise<T> {
-  const res = await fetchData(base, file)
+async function fetchJson<T>(fetchFn: typeof fetch, base: string, file: string): Promise<T> {
+  const res = await fetchData(fetchFn, base, file)
   try {
     return (await res.json()) as T
   } catch (cause) {
@@ -63,25 +71,23 @@ async function fetchJson<T>(base: string, file: string): Promise<T> {
   }
 }
 
-async function fetchMatrix(base: string): Promise<Uint16Array> {
-  const res = await fetchData(base, 'matrix.bin')
-  try {
-    return new Uint16Array(await res.arrayBuffer())
-  } catch (cause) {
-    // A truncated body gives an odd byteLength, which would otherwise surface as a bare RangeError.
-    throw new Error(`failed to read ${base}/data/matrix.bin as a Uint16 matrix`, { cause })
-  }
+async function fetchMatrix(fetchFn: typeof fetch, base: string): Promise<Uint16Array> {
+  const res = await fetchData(fetchFn, base, 'matrix.bin')
+  return toMatrix(await res.arrayBuffer(), `${base}/data/matrix.bin`)
 }
 
-/** Browser loader. Errors carry the failing URL so the shell can show a retry screen with a reason. */
-export async function loadDataset(baseUrl = ''): Promise<Dataset> {
+/**
+ * Browser loader. Errors carry the failing URL so the shell can show a retry screen with a reason.
+ * `fetchFn` exists so tests can drive the failure paths without a network.
+ */
+export async function loadDataset(baseUrl = '', fetchFn: typeof fetch = fetch): Promise<Dataset> {
   const base = trimSlash(baseUrl)
   const [palsFile, matrix, combos, passives, mutation] = await Promise.all([
-    fetchJson<PalsFile>(base, 'pals.json'),
-    fetchMatrix(base),
-    fetchJson<CombosFile>(base, 'combos.json'),
-    fetchJson<PassiveRecord[]>(base, 'passives.json'),
-    fetchJson<MutationConfig>(base, 'mutation.json'),
+    fetchJson<PalsFile>(fetchFn, base, 'pals.json'),
+    fetchMatrix(fetchFn, base),
+    fetchJson<CombosFile>(fetchFn, base, 'combos.json'),
+    fetchJson<PassiveRecord[]>(fetchFn, base, 'passives.json'),
+    fetchJson<MutationConfig>(fetchFn, base, 'mutation.json'),
   ])
   return assemble(palsFile, matrix, combos, passives, mutation)
 }
@@ -117,5 +123,5 @@ export async function loadDatasetFromDisk(dir: string): Promise<Dataset> {
     readJson<MutationConfig>('mutation.json'),
   ])
   // Node hands back a view that may sit at an odd offset in a pooled buffer, so copy before reinterpreting.
-  return assemble(palsFile, new Uint16Array(new Uint8Array(bytes).buffer), combos, passives, mutation)
+  return assemble(palsFile, toMatrix(new Uint8Array(bytes).buffer, matrixPath), combos, passives, mutation)
 }
