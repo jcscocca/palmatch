@@ -1,0 +1,89 @@
+export interface PalRecord {
+  /** palcalc InternalName, e.g. `CatMage`. Stable across game versions; the dataset is sorted by it. */
+  id: string
+  name: string
+  dex: string
+  types: string[]
+  power: number
+  priority: number
+  maleProb: number
+  guaranteed: string[]
+  sprite: string
+}
+
+export type GenderCode = 'F' | 'M'
+
+export interface UniqueCombo {
+  a: number
+  b: number
+  child: number
+}
+
+export interface GenderLockedCombo {
+  a: number
+  aGender: GenderCode
+  b: number
+  bGender: GenderCode
+  child: number
+}
+
+export interface CombosFile {
+  unique: UniqueCombo[]
+  genderLocked: GenderLockedCombo[]
+  sameSpeciesOnly: number[]
+}
+
+export interface PassiveRecord {
+  id: string
+  name: string
+  rank: number
+  randomAllowed: boolean
+  randomWeight: number
+  standard: boolean
+}
+
+export interface MutationConfig {
+  source: string
+  rankCoefficient: number
+  rankDiffPenalty: number
+  randomCoefficient: number
+  chances: { base: number; vegetableCake: number; extravagantCake: number }
+}
+
+export interface DatasetVersion {
+  palcalcCommit: string
+  gameVersion: string
+  refreshedAt: string
+}
+
+export interface PalsFile {
+  version: DatasetVersion
+  pals: PalRecord[]
+}
+
+/** Every index in the engine is a position in `pals`, which `matrix` and `combos` are keyed by. */
+export interface Dataset {
+  pals: PalRecord[]
+  byId: Map<string, number>
+  matrix: Uint16Array
+  combos: CombosFile
+  passives: PassiveRecord[]
+  mutation: MutationConfig
+  version: DatasetVersion
+}
+
+/** `gender-AF`/`gender-AM` name the gender required of the *stored* A-side parent, not the caller's. */
+export type BreedCondition = 'standard' | 'unique' | 'same-species' | 'gender-AF' | 'gender-AM'
+
+export interface BreedResult {
+  child: number
+  condition: BreedCondition
+}
+
+export type ComboBadge = 'unique' | 'same-species' | 'gender-locked'
+
+export interface ParentCombo {
+  a: number
+  b: number
+  badges: ComboBadge[]
+}
