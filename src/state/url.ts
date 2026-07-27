@@ -104,7 +104,7 @@ function buildLowerLookup(byId: Map<string, number>): Map<string, number> {
 function resolve(lower: Map<string, number>, id: string, warnings: string[]): number | null {
   const index = lower.get(id.toLowerCase())
   if (index === undefined) {
-    warnings.push(`unknown pal id '${id}'`)
+    warnings.push(`unknown pal '${id}' cleared from link`)
     return null
   }
   return index

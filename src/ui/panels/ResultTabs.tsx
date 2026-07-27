@@ -77,7 +77,7 @@ export function ResultTabs() {
   const body = ((): ReactNode => {
     switch (activeTab) {
       case null:
-        return <p className="panel-note">pick pals to begin — a parent, a pair, or a target</p>
+        return <p className="panel-note">pick pals to begin — fill PARENT A, PARENT B, or TARGET above, or press / to search</p>
       case 'child':
         return pair === null ? null : <ChildCard a={pair.a} b={pair.b} />
       case 'mutations':

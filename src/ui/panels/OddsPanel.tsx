@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useState } from 'react'
 import { passiveOdds } from '../../engine/passives.ts'
 import type { PassiveRecord } from '../../engine/types.ts'
 import { percent } from '../../lib/format.ts'
@@ -110,8 +110,10 @@ export function OddsPanel({ a, b }: OddsPanelProps) {
 
   // The single place the desired set is reconciled with the pool: dropping a parent's passive
   // drops it from the store here, and everything below just reads `desired` back. Filtering it a
-  // second time at render would be a second answer to the same question.
-  useEffect(() => {
+  // second time at render would be a second answer to the same question. Layout timing (not
+  // passive) so a pruned id never paints for one frame in the "% for N of M" line before the
+  // union catches up.
+  useLayoutEffect(() => {
     const pruned = desired.filter((id) => union.includes(id))
     if (pruned.length !== desired.length) setDesiredPassives(pruned)
   }, [desired, setDesiredPassives, union])

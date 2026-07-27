@@ -4,6 +4,8 @@ import type { Dataset } from './engine/types.ts'
 import { useWorkbenchStore } from './state/store.ts'
 import { bindUrl } from './state/url.ts'
 import { DatasetContext } from './ui/dataset-context.ts'
+import { Toasts } from './ui/Toasts.tsx'
+import { useUrlWarningToasts } from './ui/useUrlWarningToasts.ts'
 import { Workbench } from './ui/Workbench.tsx'
 
 type LoadState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; ds: Dataset }
@@ -28,13 +30,16 @@ function App() {
     }
   }, [attempt])
 
-  // Bound once the dataset exists — the URL codec needs `pals`/`byId` to resolve ids. Task 8 adds
-  // the `onWarnings` toast argument.
+  const { toasts, onWarnings, dismiss } = useUrlWarningToasts()
+
+  // Bound once the dataset exists — the URL codec needs `pals`/`byId` to resolve ids. An unknown
+  // pal id in the hash (a stale/hand-typed link) surfaces here as a dismissible toast rather than
+  // silently dropping the slot.
   const ds = state.status === 'ready' ? state.ds : null
   useEffect(() => {
     if (ds === null) return
-    return bindUrl(useWorkbenchStore, ds.pals, ds.byId)
-  }, [ds])
+    return bindUrl(useWorkbenchStore, ds.pals, ds.byId, onWarnings)
+  }, [ds, onWarnings])
 
   if (state.status === 'loading') {
     return (
@@ -64,6 +69,7 @@ function App() {
   return (
     <DatasetContext value={state.ds}>
       <Workbench />
+      <Toasts toasts={toasts} onDismiss={dismiss} />
     </DatasetContext>
   )
 }

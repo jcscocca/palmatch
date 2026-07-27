@@ -94,8 +94,9 @@ export function Workbench() {
           palcalc {palcalcCommit.slice(0, 7)} · refreshed {refreshedAt.slice(0, 10)}
         </p>
         <p>
-          Data &amp; sprites: palcalc (MIT) · Mutation model: community estimates via palpedia.net Discord research ·
-          Unofficial fan tool — not affiliated with Pocketpair. Palworld © Pocketpair, Inc.
+          Data &amp; sprites: palcalc (MIT) · Mutation model: community research by the palpedia.net Discord (Dinosaur,
+          Kernist, DirectingRage, Despair, et al.) · Unofficial fan tool, not affiliated with Pocketpair. Palworld and
+          all game assets © Pocketpair, Inc.
         </p>
       </footer>
 

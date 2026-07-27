@@ -12,9 +12,9 @@ button {
 }
 
 .label-caps {
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 2px;
-  color: var(--text-faint);
+  color: var(--text-dim);
   text-transform: uppercase;
 }
 
@@ -60,7 +60,7 @@ button {
   border: 2px solid var(--border);
   background: var(--surface);
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 2px;
 }
 
@@ -75,7 +75,7 @@ button {
   background: var(--surface-alt);
   color: var(--text-dim);
   font: inherit;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 /* ---- slots ---- */
@@ -258,7 +258,7 @@ button {
 }
 
 .pal-caption {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-dim);
   letter-spacing: 1px;
 }
@@ -300,7 +300,7 @@ button {
   border: 2px solid var(--border);
   background: var(--surface-alt);
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
 }
 
@@ -320,7 +320,7 @@ button {
   border: 2px solid var(--border);
   background: var(--surface-alt);
   color: var(--text-dim);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 1px;
   text-transform: uppercase;
 }
@@ -355,7 +355,7 @@ button {
   border-right: 2px solid var(--border);
   background: var(--surface);
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 2px;
   white-space: nowrap;
 }
@@ -379,8 +379,16 @@ button {
   box-shadow: 3px 3px 0 #000;
 }
 
+/*
+ * No top margin: every panel-note is either the sole content of a `.panel` (padding already
+ * spaces it) or follows a sibling that carries its own bottom margin/gap (chain-head, a flex
+ * container's `gap`). A margin here on top of either of those doubled the gap and, worse, made
+ * the empty-state note sit 6px lower than every other panel's flush-to-padding content - a jump
+ * every time the mode/tab switched. `.table-scroll` below picks up the one case (ComboTable's
+ * "…N more" note) that relied on this margin for its own spacing.
+ */
 .panel-note {
-  margin: 6px 0 0;
+  margin: 0;
   color: var(--text-dim);
   font-size: 12px;
   line-height: 1.6;
@@ -389,7 +397,7 @@ button {
 .count-line {
   margin: 0 0 10px;
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 2px;
   text-transform: uppercase;
 }
@@ -400,7 +408,7 @@ button {
   border: 2px solid var(--border);
   background: var(--surface-alt);
   color: var(--text-dim);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 1px;
   white-space: nowrap;
 }
@@ -466,6 +474,9 @@ button {
 
 .table-scroll {
   overflow-x: auto;
+  /* Only load-bearing when a "…N more" panel-note follows a capped table — panel-note carries no
+     margin of its own (see above), so the gap has to come from here instead. */
+  margin-bottom: 8px;
 }
 
 .combo-table {
@@ -477,7 +488,7 @@ button {
   padding: 6px 8px;
   border-bottom: 2px solid var(--border);
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: 2px;
   text-align: left;
@@ -603,7 +614,7 @@ button {
 
 .step-num {
   color: var(--accent);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 2px;
 }
 
@@ -677,7 +688,7 @@ button {
 
 .chance-table th {
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 2px;
 }
 
@@ -777,7 +788,7 @@ button {
 .odds-caveat {
   margin: 0;
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.7;
 }
 
@@ -834,9 +845,9 @@ button {
 }
 
 .palette-keys {
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 1px;
-  color: var(--text-faint);
+  color: var(--text-dim);
 }
 
 .palette-input {
@@ -888,9 +899,56 @@ button {
 .palette-empty {
   margin: 0;
   padding: 8px 2px;
-  color: var(--text-faint);
+  color: var(--text-dim);
   font-size: 11px;
   letter-spacing: 1px;
+}
+
+/* ---- url warning toasts ---- */
+
+.toast-stack {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(320px, calc(100vw - 32px));
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  box-shadow: 3px 3px 0 #000;
+}
+
+.toast-list {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.toast-close {
+  flex: none;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.toast-close:hover {
+  color: var(--accent);
 }
 
 /* ---- footer ---- */
@@ -899,8 +957,8 @@ button {
   margin-top: 32px;
   padding-top: 12px;
   border-top: 2px solid var(--border);
-  color: var(--text-faint);
-  font-size: 10px;
+  color: var(--text-dim);
+  font-size: 11px;
   line-height: 1.7;
 }
 
@@ -1018,6 +1076,13 @@ button {
 
   .odds-big {
     font-size: 32px;
+  }
+
+  .toast-stack {
+    top: 10px;
+    right: 10px;
+    left: 10px;
+    width: auto;
   }
 }
 

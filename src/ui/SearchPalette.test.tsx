@@ -89,28 +89,50 @@ describe('SearchPalette', () => {
     expect(useWorkbenchStore.getState().slotA).toBe(rows[1])
   })
 
-  it('digit keys send the active row to A / B / target', () => {
+  it('ArrowUp from the first result wraps around to the last', () => {
+    const input = open('a')
+    type(input, 'la')
+    const rows = searchPals(ds.pals, 'la')
+    expect(rows.length).toBeGreaterThan(1)
+    fireEvent.keyDown(input, { key: 'ArrowUp' })
+    expect(input.getAttribute('aria-activedescendant')).toBe(`palette-option-${rows.length - 1}`)
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(useWorkbenchStore.getState().slotA).toBe(rows[rows.length - 1])
+  })
+
+  it('digit 2 sends the active (first) row to slot B', () => {
     useWorkbenchStore.getState().setSlot('a', foxparks)
     const onClose = vi.fn()
     const input = open('a', onClose)
     type(input, 'lam')
     fireEvent.keyDown(input, { key: '2' })
-    expect(useWorkbenchStore.getState().slotB).toBe(expected('lam')[0])
+    expect(useWorkbenchStore.getState().slotB).toBe(searchPals(ds.pals, 'lam')[0])
     expect(onClose).toHaveBeenCalled()
-    cleanup()
-
-    const input2 = open('a')
-    type(input2, 'lam')
-    fireEvent.keyDown(input2, { key: '3' })
-    expect(useWorkbenchStore.getState().target).toBe(expected('lam')[0])
   })
 
-  it('a digit picks the second result once the active row has moved', () => {
+  it('digit 3 sends the active (first) row to the target', () => {
+    const input = open('a')
+    type(input, 'lam')
+    fireEvent.keyDown(input, { key: '3' })
+    expect(useWorkbenchStore.getState().target).toBe(searchPals(ds.pals, 'lam')[0])
+  })
+
+  it('digit 2 promotes the second result to slot B once the active row has moved', () => {
+    // slotB only holds a value while slotA is filled — normalizeSlots otherwise promotes it to A.
+    useWorkbenchStore.getState().setSlot('a', foxparks)
+    const input = open('a')
+    type(input, 'la')
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    fireEvent.keyDown(input, { key: '2' })
+    expect(useWorkbenchStore.getState().slotB).toBe(searchPals(ds.pals, 'la')[1])
+  })
+
+  it('digit 3 promotes the second result to the target once the active row has moved', () => {
     const input = open('t')
     type(input, 'la')
     fireEvent.keyDown(input, { key: 'ArrowDown' })
     fireEvent.keyDown(input, { key: '3' })
-    expect(useWorkbenchStore.getState().target).toBe(expected('la')[1])
+    expect(useWorkbenchStore.getState().target).toBe(searchPals(ds.pals, 'la')[1])
   })
 
   it('digits still type into an all-digit (dex) query', () => {

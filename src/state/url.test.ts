@@ -85,13 +85,13 @@ describe('parseHash edge cases', () => {
   it('nulls just the bad slot and warns, keeping the rest of a well-formed route', () => {
     const { state, warnings } = parseHash('#/b/foxparks+ghostpal', BY_ID)
     expect(state).toEqual({ slotA: 0, slotB: null, target: null, tab: null })
-    expect(warnings).toEqual(["unknown pal id 'ghostpal'"])
+    expect(warnings).toEqual(["unknown pal 'ghostpal' cleared from link"])
   })
 
   it('warns for an unknown a-only id', () => {
     const { state, warnings } = parseHash('#/a/ghostpal', BY_ID)
     expect(state).toEqual({ slotA: null, slotB: null, target: null, tab: null })
-    expect(warnings).toEqual(["unknown pal id 'ghostpal'"])
+    expect(warnings).toEqual(["unknown pal 'ghostpal' cleared from link"])
   })
 
   it.each(['#/b/', '#/c/x>', '#/zzz'])('treats malformed hash %s as empty state with a warning, never throwing', (hash) => {
@@ -111,7 +111,7 @@ describe('parseHash edge cases', () => {
     // is that the *target* on the other side of the separator still comes out correct.
     const { state, warnings } = parseHash('#/c/foßparks~grizzbolt', BY_ID)
     expect(state).toEqual({ slotA: null, slotB: null, target: 2, tab: null })
-    expect(warnings).toEqual(["unknown pal id 'foßparks'"])
+    expect(warnings).toEqual(["unknown pal 'foßparks' cleared from link"])
   })
 })
 
@@ -240,10 +240,10 @@ describe('bindUrl', () => {
     const seen: string[][] = []
     const store = createWorkbenchStore()
     const unbind = bindUrl(store, PALS, BY_ID, (w) => seen.push(w))
-    expect(seen).toEqual([["unknown pal id 'ghostpal'"]])
+    expect(seen).toEqual([["unknown pal 'ghostpal' cleared from link"]])
 
     fireHashChange('#/t/grizzbolt')
-    expect(seen).toEqual([["unknown pal id 'ghostpal'"], []])
+    expect(seen).toEqual([["unknown pal 'ghostpal' cleared from link"], []])
     unbind()
   })
 
