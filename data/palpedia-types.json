@@ -1,0 +1,990 @@
+{
+  "alpaca": [
+    "normal"
+  ],
+  "amaterasuwolf": [
+    "fire"
+  ],
+  "amaterasuwolf_dark": [
+    "dark"
+  ],
+  "anubis": [
+    "ground"
+  ],
+  "badcatgirl": [
+    "dark"
+  ],
+  "baphomet": [
+    "fire",
+    "dark"
+  ],
+  "baphomet_dark": [
+    "dark"
+  ],
+  "bastet": [
+    "dark"
+  ],
+  "bastet_ice": [
+    "ice"
+  ],
+  "berrygoat": [
+    "grass"
+  ],
+  "berrygoat_dark": [
+    "dark"
+  ],
+  "birddragon": [
+    "fire",
+    "dark"
+  ],
+  "birddragon_ice": [
+    "ice",
+    "dark"
+  ],
+  "blackcentaur": [
+    "dark"
+  ],
+  "blackgriffon": [
+    "dark"
+  ],
+  "blackmetaldragon": [
+    "dragon",
+    "dark"
+  ],
+  "blackpuppy": [
+    "dark"
+  ],
+  "blackpuppy_ice": [
+    "dark",
+    "ice"
+  ],
+  "blueberryfairy": [
+    "grass",
+    "dark"
+  ],
+  "bluedragon": [
+    "water",
+    "dragon"
+  ],
+  "bluedragon_ice": [
+    "ice",
+    "dragon"
+  ],
+  "blueplatypus": [
+    "water"
+  ],
+  "blueplatypus_fire": [
+    "water",
+    "fire"
+  ],
+  "blueskydragon": [
+    "dragon",
+    "water"
+  ],
+  "bluethunderhorse": [
+    "electric"
+  ],
+  "boar": [
+    "ground"
+  ],
+  "brownrabbit": [
+    "ground"
+  ],
+  "cactusdoll": [
+    "grass"
+  ],
+  "cactusdoll_dark": [
+    "dark",
+    "grass"
+  ],
+  "candleghost": [
+    "dark",
+    "fire"
+  ],
+  "captainpenguin": [
+    "water",
+    "ice"
+  ],
+  "captainpenguin_black": [
+    "water",
+    "electric"
+  ],
+  "carbunclo": [
+    "grass"
+  ],
+  "catbat": [
+    "dark"
+  ],
+  "catmage": [
+    "dark"
+  ],
+  "catmage_fire": [
+    "dark",
+    "fire"
+  ],
+  "catvampire": [
+    "dark"
+  ],
+  "chickenpal": [
+    "normal"
+  ],
+  "clionetwins": [
+    "water"
+  ],
+  "cloverfairy": [
+    "grass",
+    "normal"
+  ],
+  "clownrabbit": [
+    "fire"
+  ],
+  "colorfulbird": [
+    "normal"
+  ],
+  "cowpal": [
+    "normal"
+  ],
+  "cubeturtle": [
+    "ground"
+  ],
+  "cubeturtle_neutral": [
+    "normal"
+  ],
+  "cutebutterfly": [
+    "grass"
+  ],
+  "cutefox": [
+    "normal"
+  ],
+  "cutemole": [
+    "ground"
+  ],
+  "dandeliongirl": [
+    "grass"
+  ],
+  "darkalien": [
+    "dark"
+  ],
+  "darkcrow": [
+    "dark"
+  ],
+  "darkflamefox": [
+    "dark",
+    "fire"
+  ],
+  "darkmechadragon": [
+    "dark",
+    "dragon"
+  ],
+  "darkscorpion": [
+    "dark",
+    "ground"
+  ],
+  "darkscorpion_ground": [
+    "ground"
+  ],
+  "deer": [
+    "normal"
+  ],
+  "deer_ground": [
+    "ground"
+  ],
+  "domearmordragon": [
+    "dragon",
+    "ground"
+  ],
+  "dreamdemon": [
+    "dark"
+  ],
+  "drillgame": [
+    "ground"
+  ],
+  "eagle": [
+    "normal"
+  ],
+  "eleccat": [
+    "electric"
+  ],
+  "eleclion": [
+    "electric"
+  ],
+  "eleclizard": [
+    "electric"
+  ],
+  "elecpanda": [
+    "electric"
+  ],
+  "elecpomeranian": [
+    "electric"
+  ],
+  "elecsnail": [
+    "electric"
+  ],
+  "elecsnail_ground": [
+    "electric",
+    "ground"
+  ],
+  "fairydragon": [
+    "dragon"
+  ],
+  "fairydragon_water": [
+    "dragon",
+    "water"
+  ],
+  "featherostrich": [
+    "ground"
+  ],
+  "fengyundeeper": [
+    "normal"
+  ],
+  "fengyundeeper_electric": [
+    "electric"
+  ],
+  "firekirin": [
+    "fire"
+  ],
+  "firekirin_dark": [
+    "fire",
+    "dark"
+  ],
+  "flamebambi": [
+    "fire"
+  ],
+  "flamebuffalo": [
+    "fire"
+  ],
+  "flowerdinosaur": [
+    "grass",
+    "dragon"
+  ],
+  "flowerdinosaur_electric": [
+    "electric",
+    "dragon"
+  ],
+  "flowerdoll": [
+    "grass"
+  ],
+  "flowerdoll_fire": [
+    "grass",
+    "fire"
+  ],
+  "flowerprince": [
+    "grass",
+    "dark"
+  ],
+  "flowerrabbit": [
+    "grass"
+  ],
+  "fluffybird": [
+    "ice"
+  ],
+  "flyingmanta": [
+    "water"
+  ],
+  "flyingmanta_thunder": [
+    "water",
+    "electric"
+  ],
+  "foxexorcist": [
+    "fire"
+  ],
+  "foxmage": [
+    "fire"
+  ],
+  "foxmage_dark": [
+    "fire",
+    "dark"
+  ],
+  "ganesha": [
+    "water"
+  ],
+  "garm": [
+    "normal"
+  ],
+  "ghostanglerfish": [
+    "dark",
+    "water"
+  ],
+  "ghostanglerfish_fire": [
+    "fire",
+    "water"
+  ],
+  "ghostbeast": [
+    "dark"
+  ],
+  "ghostblackcat": [
+    "dark"
+  ],
+  "ghostdragon": [
+    "dragon",
+    "dark"
+  ],
+  "ghostdragon_fire": [
+    "dragon",
+    "fire"
+  ],
+  "ghostrabbit": [
+    "dark"
+  ],
+  "ghostrabbit_grass": [
+    "grass"
+  ],
+  "goldenhorse": [
+    "ground"
+  ],
+  "gorilla": [
+    "normal"
+  ],
+  "gorilla_ground": [
+    "ground"
+  ],
+  "grassgolem": [
+    "ground",
+    "grass"
+  ],
+  "grassgolem_dark": [
+    "ground",
+    "dark"
+  ],
+  "grassmammoth": [
+    "grass",
+    "ground"
+  ],
+  "grassmammoth_ice": [
+    "ice",
+    "ground"
+  ],
+  "grassminotaur": [
+    "grass"
+  ],
+  "grassminotaur_ice": [
+    "ice"
+  ],
+  "grasspanda": [
+    "grass"
+  ],
+  "grasspanda_electric": [
+    "electric"
+  ],
+  "grassrabbitman": [
+    "grass"
+  ],
+  "grimgirl": [
+    "dark"
+  ],
+  "guardiandog": [
+    "normal"
+  ],
+  "hadesbird": [
+    "dark"
+  ],
+  "hadesbird_electric": [
+    "dark",
+    "electric"
+  ],
+  "hawkbird": [
+    "normal"
+  ],
+  "hedgehog": [
+    "electric"
+  ],
+  "hedgehog_ice": [
+    "ice"
+  ],
+  "herculesbeetle": [
+    "ground",
+    "grass"
+  ],
+  "herculesbeetle_ground": [
+    "ground"
+  ],
+  "hoodghost": [
+    "dark"
+  ],
+  "horus": [
+    "fire"
+  ],
+  "horus_water": [
+    "water"
+  ],
+  "icecrocodile": [
+    "ice",
+    "water"
+  ],
+  "icedeer": [
+    "ice"
+  ],
+  "icefox": [
+    "ice"
+  ],
+  "icehorse": [
+    "ice"
+  ],
+  "icehorse_dark": [
+    "dark"
+  ],
+  "icenarwhal": [
+    "ice",
+    "water"
+  ],
+  "icenarwhal_fire": [
+    "ice",
+    "fire"
+  ],
+  "iceseal": [
+    "ice",
+    "water"
+  ],
+  "iceseal_ground": [
+    "ice",
+    "ground"
+  ],
+  "icewitch": [
+    "ice"
+  ],
+  "jellyfishfairy": [
+    "water"
+  ],
+  "jellyfishghost": [
+    "water",
+    "dark"
+  ],
+  "jetdragon": [
+    "dragon"
+  ],
+  "kabukiman": [
+    "fire"
+  ],
+  "kelpie": [
+    "water"
+  ],
+  "kelpie_fire": [
+    "fire"
+  ],
+  "kendofrog": [
+    "water"
+  ],
+  "kendofrog_dark": [
+    "water",
+    "dark"
+  ],
+  "kingalpaca": [
+    "normal"
+  ],
+  "kingalpaca_ice": [
+    "ice"
+  ],
+  "kingbahamut": [
+    "fire"
+  ],
+  "kingbahamut_dragon": [
+    "dragon",
+    "fire"
+  ],
+  "kingsunfish": [
+    "water"
+  ],
+  "kingsunfish_thunder": [
+    "water",
+    "electric"
+  ],
+  "kingwhale": [
+    "water"
+  ],
+  "kirin": [
+    "electric"
+  ],
+  "kirin_ice": [
+    "ice"
+  ],
+  "kitsunebi": [
+    "fire"
+  ],
+  "kitsunebi_ice": [
+    "ice"
+  ],
+  "lanternbutler": [
+    "dark",
+    "fire"
+  ],
+  "lavagirl": [
+    "fire"
+  ],
+  "lazycatfish": [
+    "ground",
+    "water"
+  ],
+  "lazycatfish_gold": [
+    "ground",
+    "water"
+  ],
+  "lazydragon": [
+    "dragon",
+    "water"
+  ],
+  "lazydragon_electric": [
+    "dragon",
+    "electric"
+  ],
+  "leafmomonga": [
+    "grass",
+    "normal"
+  ],
+  "leafprincess": [
+    "grass"
+  ],
+  "legenddeer": [
+    "normal"
+  ],
+  "lilyqueen": [
+    "grass"
+  ],
+  "lilyqueen_dark": [
+    "dark"
+  ],
+  "littlebriarrose": [
+    "grass"
+  ],
+  "lizardman": [
+    "dark"
+  ],
+  "lizardman_fire": [
+    "fire"
+  ],
+  "longcat": [
+    "normal"
+  ],
+  "lotusdragon": [
+    "grass",
+    "water"
+  ],
+  "manticore": [
+    "fire"
+  ],
+  "manticore_dark": [
+    "fire",
+    "dark"
+  ],
+  "mimicdog": [
+    "normal"
+  ],
+  "monkey": [
+    "grass"
+  ],
+  "monkey_fire": [
+    "fire"
+  ],
+  "monochromequeen": [
+    "dark",
+    "normal"
+  ],
+  "moonchild": [
+    "dark"
+  ],
+  "moonqueen": [
+    "dark",
+    "normal"
+  ],
+  "mopbaby": [
+    "ice"
+  ],
+  "mopking": [
+    "ice"
+  ],
+  "mothman": [
+    "grass"
+  ],
+  "mummypal": [
+    "dark",
+    "ground"
+  ],
+  "mushroomdragon": [
+    "grass"
+  ],
+  "mushroomdragon_dark": [
+    "grass",
+    "dark"
+  ],
+  "mushroomlady": [
+    "grass"
+  ],
+  "mutant": [
+    "normal"
+  ],
+  "mysterymask": [
+    "dark"
+  ],
+  "naughtycat": [
+    "normal"
+  ],
+  "negativekoala": [
+    "dark"
+  ],
+  "negativeoctopus": [
+    "dark",
+    "water"
+  ],
+  "negativeoctopus_neutral": [
+    "normal",
+    "water"
+  ],
+  "nightbluehorse": [
+    "dark"
+  ],
+  "nightbluehorse_neutral": [
+    "normal"
+  ],
+  "nightfox": [
+    "dark"
+  ],
+  "nightlady": [
+    "dark"
+  ],
+  "nightlady_dark": [
+    "dark"
+  ],
+  "octopusgirl": [
+    "water",
+    "dark"
+  ],
+  "octopusgirl_neutral": [
+    "water",
+    "normal"
+  ],
+  "onighostgirl": [
+    "dark"
+  ],
+  "pandagirl": [
+    "grass"
+  ],
+  "penguin": [
+    "water",
+    "ice"
+  ],
+  "penguin_electric": [
+    "water",
+    "electric"
+  ],
+  "pinkcat": [
+    "normal"
+  ],
+  "pinklizard": [
+    "dark"
+  ],
+  "pinkrabbit": [
+    "normal"
+  ],
+  "pinkrabbit_grass": [
+    "grass"
+  ],
+  "plantslime": [
+    "grass",
+    "ground"
+  ],
+  "plantslime_flower": [
+    "grass",
+    "ground"
+  ],
+  "plesiosaur": [
+    "grass",
+    "ground"
+  ],
+  "poseidonorca": [
+    "water"
+  ],
+  "purplespider": [
+    "dark"
+  ],
+  "queenbee": [
+    "grass"
+  ],
+  "raijindaughter": [
+    "electric"
+  ],
+  "raijindaughter_water": [
+    "dark",
+    "electric"
+  ],
+  "redarmorbird": [
+    "fire"
+  ],
+  "redflowerbird": [
+    "grass"
+  ],
+  "robinhood": [
+    "grass"
+  ],
+  "robinhood_ground": [
+    "grass",
+    "ground"
+  ],
+  "rockbeast": [
+    "ground"
+  ],
+  "rockbeast_ice": [
+    "ice"
+  ],
+  "ronin": [
+    "fire"
+  ],
+  "ronin_dark": [
+    "fire",
+    "dark"
+  ],
+  "saintcentaur": [
+    "normal"
+  ],
+  "sakurasaurus": [
+    "grass"
+  ],
+  "sakurasaurus_water": [
+    "grass",
+    "water"
+  ],
+  "samuraidog": [
+    "ground"
+  ],
+  "scorpionman": [
+    "dark",
+    "ground"
+  ],
+  "scorpionman_electric": [
+    "electric",
+    "ground"
+  ],
+  "sekhmet": [
+    "ground"
+  ],
+  "serpent": [
+    "water"
+  ],
+  "serpent_ground": [
+    "ground"
+  ],
+  "sharkkid": [
+    "water"
+  ],
+  "sharkkid_fire": [
+    "fire"
+  ],
+  "sheepball": [
+    "normal"
+  ],
+  "sifudog": [
+    "normal"
+  ],
+  "skydragon": [
+    "dragon"
+  ],
+  "skydragon_grass": [
+    "dragon",
+    "grass"
+  ],
+  "sleeverabbit": [
+    "normal"
+  ],
+  "smallarmadillo": [
+    "ground"
+  ],
+  "smallyeti": [
+    "ice"
+  ],
+  "snakegirl": [
+    "dark"
+  ],
+  "snowpeafowl": [
+    "ice"
+  ],
+  "snowtigerbeastman": [
+    "ice"
+  ],
+  "soldierbee": [
+    "grass"
+  ],
+  "stuffedshark": [
+    "water"
+  ],
+  "stuffedshark_fire": [
+    "water",
+    "fire"
+  ],
+  "sumodog": [
+    "ground"
+  ],
+  "suzaku": [
+    "fire"
+  ],
+  "suzaku_water": [
+    "water"
+  ],
+  "sweetssheep": [
+    "normal"
+  ],
+  "sweetssheep_ground": [
+    "ground"
+  ],
+  "swordcutlassfish": [
+    "water"
+  ],
+  "swordcutlassfish_fire": [
+    "water",
+    "fire"
+  ],
+  "tentacleturtle": [
+    "water"
+  ],
+  "tentacleturtle_ground": [
+    "water",
+    "ground"
+  ],
+  "thiefbird": [
+    "dark"
+  ],
+  "thunderbird": [
+    "electric"
+  ],
+  "thunderbird_ice": [
+    "ice"
+  ],
+  "thunderdog": [
+    "electric"
+  ],
+  "thunderdog_ice": [
+    "ice"
+  ],
+  "thunderdragonman": [
+    "dragon",
+    "electric"
+  ],
+  "thunderfluffybird": [
+    "electric"
+  ],
+  "tropicalostrich": [
+    "grass"
+  ],
+  "umihebi": [
+    "dragon",
+    "water"
+  ],
+  "umihebi_fire": [
+    "dragon",
+    "fire"
+  ],
+  "venusflytrap": [
+    "grass"
+  ],
+  "violetfairy": [
+    "grass"
+  ],
+  "volcanicmonster": [
+    "fire",
+    "ground"
+  ],
+  "volcanicmonster_ice": [
+    "ice",
+    "ground"
+  ],
+  "volcanodragon": [
+    "fire",
+    "ground"
+  ],
+  "volcanodragon_ice": [
+    "ice",
+    "ground"
+  ],
+  "weaseldragon": [
+    "ice",
+    "dragon"
+  ],
+  "weaseldragon_fire": [
+    "fire",
+    "dragon"
+  ],
+  "werewolf": [
+    "dark"
+  ],
+  "werewolf_ice": [
+    "ice"
+  ],
+  "whitealiendragon": [
+    "dragon"
+  ],
+  "whitedeer": [
+    "normal"
+  ],
+  "whitedeer_dark": [
+    "dark"
+  ],
+  "whitemoth": [
+    "ice"
+  ],
+  "whitemoth_neutral": [
+    "normal"
+  ],
+  "whiteshielddragon": [
+    "dragon"
+  ],
+  "whitetiger": [
+    "ice"
+  ],
+  "whitetiger_ground": [
+    "ground"
+  ],
+  "windchimes": [
+    "ground"
+  ],
+  "windchimes_ice": [
+    "ice"
+  ],
+  "winggolem": [
+    "ground"
+  ],
+  "winggolem_fire": [
+    "fire"
+  ],
+  "wizardowl": [
+    "dark"
+  ],
+  "woolfox": [
+    "normal"
+  ],
+  "yakushimaboss001": [
+    "dark"
+  ],
+  "yakushimaboss001_small": [
+    "dark"
+  ],
+  "yakushimamonster001": [
+    "grass"
+  ],
+  "yakushimamonster001_blue": [
+    "water"
+  ],
+  "yakushimamonster001_pink": [
+    "normal"
+  ],
+  "yakushimamonster001_purple": [
+    "dark"
+  ],
+  "yakushimamonster001_rainbow": [
+    "normal"
+  ],
+  "yakushimamonster001_red": [
+    "fire"
+  ],
+  "yakushimamonster002": [
+    "normal"
+  ],
+  "yakushimamonster003": [
+    "normal"
+  ],
+  "yakushimamonster003_purple": [
+    "normal"
+  ],
+  "yeti": [
+    "ice"
+  ],
+  "yeti_grass": [
+    "grass"
+  ]
+}

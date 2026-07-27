@@ -1,0 +1,11 @@
+{
+  "source": "community-estimated (palpedia.net Discord research)",
+  "rankCoefficient": 0.5,
+  "rankDiffPenalty": 0.4,
+  "randomCoefficient": 0.1,
+  "chances": {
+    "base": 0.01,
+    "vegetableCake": 0.02,
+    "extravagantCake": 0.03
+  }
+}
