@@ -101,6 +101,34 @@ export interface ComboEntry {
   results: BreedResult[]
 }
 
+/** One breed in a chain: `a` x `b` produces `child`. */
+export interface ChainStep {
+  a: number
+  b: number
+  child: number
+}
+
+/** What the chain worker is asked for, and what it answers with. */
+export interface ChainRequest {
+  starters: number[]
+  target: number
+  maxDepth?: number
+}
+
+export type ChainResponse = { steps: ChainStep[] | null } | { error: string }
+
+/** One possible mutation child and its share of the mutation roll. */
+export interface MutationOutcome {
+  child: number
+  weight: number
+}
+
+/** An unordered parent pair, `a <= b`. */
+export interface MutationPair {
+  a: number
+  b: number
+}
+
 export type ComboBadge = 'unique' | 'same-species' | 'gender-locked'
 
 export interface ParentCombo {
