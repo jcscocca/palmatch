@@ -1,0 +1,110 @@
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { findParents } from '../../engine/breed.ts'
+import { loadDatasetFromDisk } from '../../engine/dataset.ts'
+import type { Dataset } from '../../engine/types.ts'
+import { useWorkbenchStore } from '../../state/store.ts'
+import { DatasetContext } from '../dataset-context.ts'
+import { ResultTabs } from './ResultTabs.tsx'
+
+let ds: Dataset
+
+function idx(name: string): number {
+  const i = ds.pals.findIndex((p) => p.name === name)
+  expect(i).toBeGreaterThanOrEqual(0)
+  return i
+}
+
+beforeAll(async () => {
+  ds = await loadDatasetFromDisk('public/data')
+})
+
+beforeEach(() => {
+  useWorkbenchStore.getState().clearAll()
+})
+
+afterEach(cleanup)
+
+function show() {
+  render(
+    <DatasetContext value={ds}>
+      <ResultTabs />
+    </DatasetContext>,
+  )
+}
+
+function pair(): void {
+  useWorkbenchStore.getState().setSlot('a', idx('Foxparks'))
+  useWorkbenchStore.getState().setSlot('b', idx('Bristla'))
+}
+
+describe('ResultTabs', () => {
+  it('offers the pair tabs and opens on the child panel', () => {
+    pair()
+    show()
+
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
+      'CHILD',
+      'MUTATIONS',
+      'PASSIVE ODDS',
+      'ALL A-COMBOS',
+    ])
+    expect(screen.getByRole('tabpanel').id).toBe('result-panel')
+    // Every tab points at the one panel element, whichever tab is selected.
+    for (const tab of screen.getAllByRole('tab')) expect(tab.getAttribute('aria-controls')).toBe('result-panel')
+    expect(screen.getByText('standard combo')).toBeTruthy()
+  })
+
+  it('switches panels on click', () => {
+    pair()
+    show()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'MUTATIONS' }))
+    expect(useWorkbenchStore.getState().tab).toBe('mutations')
+    expect(screen.getByText('COMMUNITY MODEL')).toBeTruthy()
+  })
+
+  it('moves between tabs with the arrow keys, keeping one tab stop', () => {
+    pair()
+    show()
+
+    const [child, mutations] = screen.getAllByRole('tab')
+    expect(child.getAttribute('tabindex')).toBe('0')
+    expect(mutations.getAttribute('tabindex')).toBe('-1')
+
+    fireEvent.keyDown(child, { key: 'ArrowRight' })
+    expect(useWorkbenchStore.getState().tab).toBe('mutations')
+    expect(document.activeElement).toBe(mutations)
+    expect(mutations.getAttribute('aria-selected')).toBe('true')
+
+    fireEvent.keyDown(mutations, { key: 'ArrowLeft' })
+    expect(useWorkbenchStore.getState().tab).toBe('child')
+    expect(document.activeElement).toBe(child)
+  })
+
+  it('counts the parent combos in the target tab label', () => {
+    const target = idx('Relaxaurus Lux')
+    useWorkbenchStore.getState().setSlot('t', target)
+    show()
+
+    const count = findParents(ds, target).length
+    expect(screen.getByRole('tab', { name: `PARENT COMBOS (${count})` })).toBeTruthy()
+    expect(screen.getByText(`${count} combos`)).toBeTruthy()
+  })
+
+  it('prompts for pals when nothing is picked', () => {
+    show()
+    expect(screen.queryAllByRole('tab')).toHaveLength(0)
+    expect(screen.getByText(/pick pals to begin/)).toBeTruthy()
+  })
+
+  it('drops a tab id that does not belong to the current mode', () => {
+    pair()
+    // Straight into the store: `setSlot` clears the tab itself, and this is the shared-link case.
+    useWorkbenchStore.setState({ tab: 'chains' })
+    show()
+
+    expect(useWorkbenchStore.getState().tab).toBe(null)
+    expect(screen.getByRole('tab', { name: 'CHILD' }).getAttribute('aria-selected')).toBe('true')
+  })
+})

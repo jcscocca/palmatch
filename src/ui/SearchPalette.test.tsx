@@ -140,6 +140,21 @@ describe('SearchPalette', () => {
     expect(screen.getByText('Lamball')).toBeTruthy()
   })
 
+  it('only dismisses on a backdrop click that also started on the backdrop', () => {
+    const onClose = vi.fn()
+    const input = open('a', onClose)
+    const dialog = screen.getByLabelText('search pals')
+
+    // Text dragged out of the input and released outside is a selection, not a dismissal.
+    fireEvent.mouseDown(input)
+    fireEvent.click(dialog)
+    expect(onClose).not.toHaveBeenCalled()
+
+    fireEvent.mouseDown(dialog)
+    fireEvent.click(dialog)
+    expect(onClose).toHaveBeenCalled()
+  })
+
   it('opens as a modal dialog and restores focus to the opener on close', () => {
     const opener = document.createElement('button')
     document.body.appendChild(opener)

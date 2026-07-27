@@ -38,11 +38,21 @@ export function SearchPalette({ forSlot, onClose }: SearchPaletteProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const openerRef = useRef<HTMLElement | null>(null)
+  const downTargetRef = useRef<EventTarget | null>(null)
+  const restoreFrameRef = useRef<number | null>(null)
 
   const results = useMemo(() => searchPals(ds.pals, query, typeFilter), [ds.pals, query, typeFilter])
   const active = results.length === 0 ? -1 : Math.min(activeRow, results.length - 1)
 
   useEffect(() => {
+    // The focus restore below is queued from *this effect's cleanup*, so cancelling it belongs at
+    // the top of the next run rather than in that same cleanup: React StrictMode tears the effect
+    // down and sets it up again immediately, and a frame left over from the teardown would yank
+    // focus out of the input this run is about to claim.
+    if (restoreFrameRef.current !== null) {
+      cancelAnimationFrame(restoreFrameRef.current)
+      restoreFrameRef.current = null
+    }
     const dialog = dialogRef.current
     // Whatever opened the palette — a slot card, the header button — gets focus back on close.
     // Recorded once, and never from inside the palette itself: StrictMode runs this effect
@@ -68,7 +78,12 @@ export function SearchPalette({ forSlot, onClose }: SearchPaletteProps) {
       restore()
       // Tearing down an open modal dialog resets focus to <body> on its own, which lands after
       // this cleanup — so claim it again on the next frame, once that has happened.
-      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(restore)
+      if (typeof requestAnimationFrame === 'function') {
+        restoreFrameRef.current = requestAnimationFrame(() => {
+          restoreFrameRef.current = null
+          restore()
+        })
+      }
     }
   }, [])
 
@@ -134,8 +149,15 @@ export function SearchPalette({ forSlot, onClose }: SearchPaletteProps) {
       className="palette-dialog"
       aria-label="search pals"
       onKeyDown={onKeyDown}
+      onMouseDown={(e) => {
+        downTargetRef.current = e.target
+      }}
       onClick={(e) => {
-        if (e.target === dialogRef.current) onClose()
+        // Both ends of the click have to land on the backdrop. Checking only the click target
+        // closes the palette when a text selection dragged out of the input is released out here.
+        const fromBackdrop = downTargetRef.current === dialogRef.current
+        downTargetRef.current = null
+        if (fromBackdrop && e.target === dialogRef.current) onClose()
       }}
     >
       <div className="palette">

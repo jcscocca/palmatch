@@ -379,10 +379,393 @@ button {
   box-shadow: 3px 3px 0 #000;
 }
 
-.panel-placeholder {
-  margin: 10px 0 0;
+.panel-note {
+  margin: 6px 0 0;
   color: var(--text-dim);
   font-size: 12px;
+  line-height: 1.6;
+}
+
+.count-line {
+  margin: 0 0 10px;
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.badge-pill {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 2px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text-dim);
+  font-size: 9px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.badge-accent {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* ---- combo table ---- */
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.filter-input {
+  flex: 1 1 220px;
+  padding: 7px 10px;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.filter-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.filter-input:disabled {
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.combo-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.combo-table th {
+  padding: 6px 8px;
+  border-bottom: 2px solid var(--border);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 2px;
+  text-align: left;
+}
+
+.combo-table td {
+  padding: 4px 8px;
+  border-bottom: 2px solid var(--border);
+  vertical-align: middle;
+}
+
+.cell-pal {
+  min-width: 160px;
+}
+
+.cell-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cell-op {
+  color: var(--text-faint);
+  font-size: 14px;
+}
+
+.cell-badges .badge-pill + .badge-pill {
+  margin-left: 4px;
+}
+
+/* ---- child card ---- */
+
+.child-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.result-card {
+  flex: 1 1 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  border: 2px solid var(--accent);
+  background: var(--accent-bg);
+  box-shadow: 3px 3px 0 #000;
+}
+
+.lock-line {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.cond-line {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-align: center;
+}
+
+.gender-odds {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+}
+
+/* ---- chains ---- */
+
+.chain-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.depth-select {
+  padding: 5px 8px;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.chain-mode {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.chain-loading,
+.chain-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.chain-loading p,
+.chain-error p {
+  margin: 0;
+}
+
+.chain-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chain-step {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 2px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.step-num {
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+
+.step-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---- mutations ---- */
+
+.mutation-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.disclaimer {
+  margin: 0;
+  padding: 10px;
+  border: 2px dashed var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.mut-pool {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 420px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.mut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 8px;
+  background: var(--surface-alt);
+}
+
+.mut-weight {
+  color: var(--accent);
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.chance-table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.chance-table caption {
+  padding-bottom: 6px;
+  text-align: left;
+}
+
+.chance-table th,
+.chance-table td {
+  padding: 4px 16px 4px 0;
+  border-bottom: 2px solid var(--border);
+  font-weight: 400;
+  text-align: left;
+}
+
+.chance-table th {
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+
+/* ---- passive odds ---- */
+
+.odds-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.passive-picker,
+.desired-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.passive-picker {
+  flex: 1 1 260px;
+  padding: 10px;
+  border: 2px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.passive-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border: 2px solid var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.chip-x {
+  padding: 0 2px;
+  border: none;
+  background: none;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.chip-x:hover {
+  color: var(--text);
+}
+
+.option-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.option-btn,
+.chip-text {
+  padding: 4px 8px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.option-btn:hover,
+.chip-text:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chip-text.chip-on {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.odds-card {
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.odds-big {
+  color: var(--accent);
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+.odds-caveat {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 1.7;
 }
 
 /* ---- search palette ---- */
@@ -624,6 +1007,18 @@ button {
 
   .palette-keys {
     display: none;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  .cell-pal {
+    min-width: 130px;
+  }
+
+  .odds-big {
+    font-size: 32px;
   }
 }
 
