@@ -9,5 +9,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     passWithNoTests: true,
+    // Heavy panel renders (300-row ComboTable) exceed the 5s default on 2-core CI runners.
+    testTimeout: 20000,
   },
 })
