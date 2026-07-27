@@ -6,6 +6,10 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   base: './',
   plugins: [react()],
+  // Both workers are constructed with `{ type: 'module' }`, but vite still bundles worker entries
+  // as IIFE by default — and an IIFE can hold neither a top-level await nor a lazy import chunk.
+  // ooz-wasm compiles its wasm under a top-level await, so the save-import worker needs ESM output.
+  worker: { format: 'es' },
   test: {
     environment: 'jsdom',
     passWithNoTests: true,
