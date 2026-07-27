@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, readdir, stat } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 const RAW = 'https://raw.githubusercontent.com/tylercamp/palcalc'
@@ -30,7 +30,7 @@ async function fetchBuffer(url: string, headers?: Record<string, string>): Promi
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
       return Buffer.from(await res.arrayBuffer())
     } catch (err) {
-      if (attempt === 1) throw new Error(`fetch failed: ${url} — ${String(err)}`)
+      if (attempt === 1) throw new Error(`fetch failed: ${url}`, { cause: err })
       await new Promise((r) => setTimeout(r, 750))
     }
   }
@@ -48,9 +48,12 @@ async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>
   await Promise.all(workers)
 }
 
+/** Writes via a temp file so an interrupted run never leaves a truncated cache entry behind. */
 async function downloadIfMissing(url: string, dest: string): Promise<boolean> {
   if (await exists(dest)) return false
-  await writeFile(dest, await fetchBuffer(url))
+  const tmp = `${dest}.tmp`
+  await writeFile(tmp, await fetchBuffer(url))
+  await rename(tmp, dest)
   return true
 }
 
@@ -74,7 +77,8 @@ async function loadTree(commit: string, cacheDir: string): Promise<TreeEntry[]> 
   const trimmed = parsed.tree
     .filter((e) => e.type === 'blob' && (e.path.startsWith(PAL_SPRITE_DIR) || e.path.startsWith(ELEMENT_DIR)))
     .map((e) => ({ path: e.path, type: e.type }))
-  await writeFile(cached, JSON.stringify(trimmed))
+  await writeFile(`${cached}.tmp`, JSON.stringify(trimmed))
+  await rename(`${cached}.tmp`, cached)
   return trimmed
 }
 
@@ -95,16 +99,17 @@ export async function fetchPalcalc(commit: string, cacheDir: string): Promise<Pa
     }
   }
 
-  const onDisk = new Set([...(await readdir(spriteDir)), ...(await readdir(elementDir))])
   const tree = await loadTree(commit, cacheDir)
-  const wanted = tree
+  const candidates = tree
     .filter((e) => e.path.endsWith('.png'))
     .map((e) => ({
       path: e.path,
       file: e.path.slice(e.path.lastIndexOf('/') + 1),
       dir: e.path.startsWith(PAL_SPRITE_DIR) ? spriteDir : elementDir,
     }))
-    .filter((e) => !onDisk.has(e.file))
+  // Same size>0 test as db/breeding, so a truncated image is re-fetched rather than trusted.
+  const present = await Promise.all(candidates.map((e) => exists(join(e.dir, e.file))))
+  const wanted = candidates.filter((_, i) => !present[i])
 
   if (wanted.length > 0) {
     console.log(`  fetching ${wanted.length} image(s) from palcalc...`)

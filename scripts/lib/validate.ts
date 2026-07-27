@@ -1,3 +1,4 @@
+import { TYPE_TO_ELEMENT } from '../../src/lib/elements.ts'
 import {
   GENDER_SENTINEL,
   GOLDEN_PAIR_COUNT,
@@ -11,6 +12,15 @@ import {
 } from './transform.ts'
 
 export const EXPECTED_PAL_COUNT = 299
+export const EXPECTED_GENDER_LOCKED_COUNT = 2
+
+/** Thrown only for data-gate failures, so the orchestrator can print it without a stack trace. */
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ValidationError'
+  }
+}
 
 export interface ValidateInput {
   pals: PalRecord[]
@@ -20,10 +30,12 @@ export interface ValidateInput {
   entries: BreedingEntry[]
   /** Sprite source filenames present in the cache, e.g. `Azurobe Cryst.png`. */
   spriteFiles: Set<string>
+  /** Element icon filenames present in the cache, e.g. `Dragon.png`. */
+  elementFiles: Set<string>
 }
 
 export function validate(input: ValidateInput): void {
-  const { pals, matrix, combos, goldens, entries, spriteFiles } = input
+  const { pals, matrix, combos, goldens, entries, spriteFiles, elementFiles } = input
   const n = pals.length
   const errors: string[] = []
   const byId = indexById(pals)
@@ -38,6 +50,12 @@ export function validate(input: ValidateInput): void {
 
   const untyped = pals.filter((p) => p.types.length === 0).map((p) => p.id)
   if (untyped.length > 0) fail(`pals with no types: ${untyped.join(', ')}`)
+
+  const unmappedTypes = [...new Set(pals.flatMap((p) => p.types))].filter((t) => {
+    const element = TYPE_TO_ELEMENT[t]
+    return element === undefined || !elementFiles.has(`${element}.png`)
+  })
+  if (unmappedTypes.length > 0) fail(`types with no element icon: ${unmappedTypes.join(', ')}`)
 
   if (matrix.length !== n * n) fail(`matrix length ${matrix.length}, expected ${n * n}`)
 
@@ -79,6 +97,8 @@ export function validate(input: ValidateInput): void {
   spot('LazyDragon', 'ElecCat', 'LazyDragon_Electric')
 
   const lockedEntries = entries.filter((e) => e.Parent1Gender !== 'WILDCARD' || e.Parent2Gender !== 'WILDCARD')
+  if (combos.genderLocked.length !== EXPECTED_GENDER_LOCKED_COUNT)
+    fail(`combos.genderLocked has ${combos.genderLocked.length} entries, expected ${EXPECTED_GENDER_LOCKED_COUNT}`)
   if (lockedEntries.length !== combos.genderLocked.length)
     fail(`breeding.json has ${lockedEntries.length} gender-locked entries, combos has ${combos.genderLocked.length}`)
   for (const e of lockedEntries) {
@@ -95,12 +115,15 @@ export function validate(input: ValidateInput): void {
         `gender-locked entry missing from combos: ${e.Parent1InternalName}(${e.Parent1Gender}) x ` +
           `${e.Parent2InternalName}(${e.Parent2Gender}) = ${e.ChildInternalName}`,
       )
-    const cell = matrix[(byId.get(e.Parent1InternalName) ?? 0) * n + (byId.get(e.Parent2InternalName) ?? 0)]
-    if (cell !== GENDER_SENTINEL)
+    const ai = byId.get(e.Parent1InternalName)
+    const bi = byId.get(e.Parent2InternalName)
+    if (ai === undefined || bi === undefined) {
+      fail(`gender-locked entry references unknown pal: ${e.Parent1InternalName} x ${e.Parent2InternalName}`)
+    } else if (matrix[ai * n + bi] !== GENDER_SENTINEL) {
       fail(`gender-locked cell ${e.Parent1InternalName}x${e.Parent2InternalName} is not the 0xFFFF sentinel`)
+    }
   }
-  if (!combos.genderLocked.every((g, i) => (i === 0 ? g.aGender === 'F' : true)))
-    fail('combos.genderLocked[0] must be the aGender:"F" direction')
+  if (combos.genderLocked[0]?.aGender !== 'F') fail('combos.genderLocked[0] must be the aGender:"F" direction')
 
   if (goldens.pairs.length !== GOLDEN_PAIR_COUNT)
     fail(`goldens.pairs has ${goldens.pairs.length} entries, expected ${GOLDEN_PAIR_COUNT}`)
@@ -125,6 +148,6 @@ export function validate(input: ValidateInput): void {
     fail(`goldens.genderLocked has ${goldens.genderLocked.length} entries, expected ${lockedEntries.length}`)
 
   if (errors.length > 0) {
-    throw new Error(`data validation failed (${errors.length}):\n  - ${errors.join('\n  - ')}`)
+    throw new ValidationError(`data validation failed (${errors.length}):\n  - ${errors.join('\n  - ')}`)
   }
 }

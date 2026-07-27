@@ -1,5 +1,6 @@
 import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 import { fetchPalcalc } from './lib/fetch-palcalc.ts'
 import { loadPalpedia, writePalpediaSnapshot } from './lib/palpedia-extract.ts'
@@ -14,9 +15,9 @@ import {
   type BreedingFile,
   type PalcalcDb,
 } from './lib/transform.ts'
-import { validate } from './lib/validate.ts'
+import { ValidationError, validate } from './lib/validate.ts'
 
-const ROOT = new URL('..', import.meta.url).pathname
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const CACHE = join(ROOT, '.cache')
 const DATA_SNAPSHOTS = join(ROOT, 'data')
 const OUT_DATA = join(ROOT, 'public/data')
@@ -46,7 +47,6 @@ async function main(): Promise<void> {
   console.log('2/6 extracting palpedia bundle')
   await mkdir(DATA_SNAPSHOTS, { recursive: true })
   const palpedia = await loadPalpedia(DATA_SNAPSHOTS)
-  if (palpedia.source === 'live') await writePalpediaSnapshot(DATA_SNAPSHOTS, palpedia)
   console.log(
     `  source=${palpedia.source} types=${Object.keys(palpedia.types).length} uniques=${palpedia.uniques.length}`,
   )
@@ -71,8 +71,11 @@ async function main(): Promise<void> {
 
   console.log('4/6 validating')
   const spriteFiles = new Set(await readdir(paths.spriteDir))
-  validate({ pals, matrix, combos, goldens, entries: breeding.Breeding, spriteFiles })
+  const elementFiles = new Set((await readdir(paths.elementDir)).filter((f) => f.endsWith('.png')))
+  validate({ pals, matrix, combos, goldens, entries: breeding.Breeding, spriteFiles, elementFiles })
   console.log('  all gates passed')
+  // Only overwrite the committed snapshot once this extraction has proven itself against every gate.
+  if (palpedia.source === 'live') await writePalpediaSnapshot(DATA_SNAPSHOTS, palpedia)
 
   console.log('5/6 writing artifacts')
   await mkdir(OUT_DATA, { recursive: true })
@@ -104,15 +107,21 @@ async function main(): Promise<void> {
   // Keyed off pals, not files: palcalc ships one sprite per display name and Gumoss
   // (PlantSlime / PlantSlime_Flower) is two pals sharing one.
   let converted = 0
+  const failed: string[] = []
   for (const pal of pals) {
-    await sharp(join(paths.spriteDir, `${pal.name}.png`))
-      .resize(SPRITE_SIZE, SPRITE_SIZE, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .webp({ quality: SPRITE_QUALITY })
-      .toFile(join(OUT_SPRITES, `${pal.id}.webp`))
-    converted++
+    try {
+      await sharp(join(paths.spriteDir, `${pal.name}.png`))
+        .resize(SPRITE_SIZE, SPRITE_SIZE, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .webp({ quality: SPRITE_QUALITY })
+        .toFile(join(OUT_SPRITES, `${pal.id}.webp`))
+      converted++
+    } catch (err) {
+      failed.push(`${pal.id} (${pal.name}.png): ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
-  if (converted !== pals.length) throw new Error(`converted ${converted} sprites for ${pals.length} pals`)
-  const elements = (await readdir(paths.elementDir)).filter((f) => f.endsWith('.png')).sort()
+  if (converted !== pals.length)
+    throw new Error(`converted ${converted} sprites for ${pals.length} pals:\n  - ${failed.join('\n  - ')}`)
+  const elements = [...elementFiles].sort()
   for (const file of elements) {
     await copyFile(join(paths.elementDir, file), join(OUT_ELEMENTS, file))
   }
@@ -121,6 +130,9 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : err)
+  // Gate failures are the expected kind of failure and read better without a stack.
+  // Anything else gets the full object: node prints the stack plus the `[cause]` chain.
+  if (err instanceof ValidationError) console.error(err.message)
+  else console.error(err)
   process.exit(1)
 })

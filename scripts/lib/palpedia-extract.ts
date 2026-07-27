@@ -9,6 +9,15 @@ const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (
 const NON_PAL_PREFIXES = ['raid_', 'predator_', 'summon_']
 /** Boss entries mirror their base pal's typing; used only as a fallback for pals palpedia lists boss-only. */
 const BOSS_PREFIX = 'boss_'
+/** Bytes of the webpack runtime scanned for the chunk-id -> hashed-filename table. */
+const RUNTIME_SCAN_BYTES = 4000
+/** Max characters between a pal entry's `"id"` and its `"type"` field in the minified bundle. */
+const MAX_TYPE_FIELD_SPAN = 400
+/**
+ * A live extraction yielding fewer typed pals than palcalc has (299) is degraded, not usable —
+ * treat it as a failed extraction so the committed snapshot is preferred instead.
+ */
+const MIN_TYPE_KEYS = 299
 
 export interface RawUnique {
   parentA: string
@@ -21,22 +30,6 @@ export interface PalpediaSnapshot {
   uniques: RawUnique[]
 }
 
-/**
- * palpedia type slug -> palcalc element icon name.
- * palcalc ships the neutral icon as `Normal.png`, so `normal` maps to `Normal`.
- */
-export const TYPE_TO_ELEMENT: Record<string, string> = {
-  normal: 'Normal',
-  fire: 'Fire',
-  water: 'Water',
-  grass: 'Leaf',
-  electric: 'Electricity',
-  ice: 'Ice',
-  ground: 'Earth',
-  dark: 'Dark',
-  dragon: 'Dragon',
-}
-
 async function get(url: string): Promise<string> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -44,7 +37,7 @@ async function get(url: string): Promise<string> {
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
       return await res.text()
     } catch (err) {
-      if (attempt === 1) throw new Error(`palpedia fetch failed: ${url} — ${String(err)}`)
+      if (attempt === 1) throw new Error(`palpedia fetch failed: ${url}`, { cause: err })
       await new Promise((r) => setTimeout(r, 750))
     }
   }
@@ -63,7 +56,7 @@ function chunkPathsFromHtml(html: string): string[] {
 function chunkPathsFromWebpackRuntime(source: string): string[] {
   const start = source.indexOf('.u=function')
   if (start < 0) return []
-  const body = source.slice(start, start + 4000)
+  const body = source.slice(start, start + RUNTIME_SCAN_BYTES)
   const out = new Set<string>()
   for (const m of body.matchAll(/"(static\/chunks\/[A-Za-z0-9._-]+\.js)"/g)) out.add(m[1]!)
 
@@ -83,7 +76,10 @@ function chunkPathsFromWebpackRuntime(source: string): string[] {
 function parsePalTypes(source: string): Record<string, string[]> {
   const direct: Record<string, string[]> = {}
   const bossFallback: Record<string, string[]> = {}
-  const re = /\{"id":"([a-z0-9_]+)","fileIndex"[\s\S]{0,400}?"type":\[([^\]]*)\]/g
+  const re = new RegExp(
+    `\\{"id":"([a-z0-9_]+)","fileIndex"[\\s\\S]{0,${MAX_TYPE_FIELD_SPAN}}?"type":\\[([^\\]]*)\\]`,
+    'g',
+  )
   for (const m of source.matchAll(re)) {
     const id = m[1]!
     let types: string[]
@@ -150,7 +146,10 @@ export async function extractPalpediaLive(): Promise<PalpediaSnapshot> {
     }
   }
 
-  if (Object.keys(types).length === 0) throw new Error('palpedia: no pal-type data found in any chunk')
+  const typeCount = Object.keys(types).length
+  if (typeCount === 0) throw new Error('palpedia: no pal-type data found in any chunk')
+  if (typeCount < MIN_TYPE_KEYS)
+    throw new Error(`palpedia: only ${typeCount} typed pals extracted, expected at least ${MIN_TYPE_KEYS}`)
   if (uniques.length === 0) throw new Error('palpedia: no unique-combo data found in any chunk')
   return { types, uniques }
 }
@@ -173,7 +172,7 @@ export async function loadPalpedia(dataDir: string): Promise<PalpediaLoad> {
         uniques: JSON.parse(await readFile(uniquesPath, 'utf8')) as RawUnique[],
       }
     } catch {
-      throw new Error(`palpedia extraction failed and no snapshot to fall back on: ${String(err)}`)
+      throw new Error('palpedia extraction failed and no snapshot to fall back on', { cause: err })
     }
     console.warn(`  WARN palpedia extraction failed (${String(err)}) — reusing committed snapshots`)
     return { ...snapshot, source: 'snapshot' }
@@ -182,6 +181,12 @@ export async function loadPalpedia(dataDir: string): Promise<PalpediaLoad> {
 
 export async function writePalpediaSnapshot(dataDir: string, snapshot: PalpediaSnapshot): Promise<void> {
   const types = Object.fromEntries(Object.entries(snapshot.types).sort(([a], [b]) => (a < b ? -1 : 1)))
+  const uniques = [...snapshot.uniques].sort(
+    (x, y) =>
+      x.parentA.localeCompare(y.parentA) ||
+      x.parentB.localeCompare(y.parentB) ||
+      x.childId.localeCompare(y.childId),
+  )
   await writeFile(join(dataDir, 'palpedia-types.json'), `${JSON.stringify(types, null, 2)}\n`)
-  await writeFile(join(dataDir, 'palpedia-uniques.json'), `${JSON.stringify(snapshot.uniques, null, 2)}\n`)
+  await writeFile(join(dataDir, 'palpedia-uniques.json'), `${JSON.stringify(uniques, null, 2)}\n`)
 }

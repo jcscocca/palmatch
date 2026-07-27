@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { SYNTHETIC_TYPES, syntheticDb, syntheticEntries } from './__fixtures__/synthetic.ts'
 import {
   GENDER_SENTINEL,
   GOLDEN_PAIR_COUNT,
@@ -9,11 +10,104 @@ import {
   buildGoldens,
   buildMatrix,
   buildPals,
+  buildPassives,
+  computeSameSpeciesOnly,
   indexById,
+  mapUniques,
+  matrixToBuffer,
   mulberry32,
   type BreedingFile,
   type PalcalcDb,
 } from './transform.ts'
+
+describe('transform (synthetic fixtures, no cache required)', () => {
+  const db = syntheticDb()
+  const pals = buildPals(db, SYNTHETIC_TYPES)
+  const entries = syntheticEntries()
+  const { matrix, genderLocked } = buildMatrix(pals, entries)
+
+  it('sorts pals by internal name and derives each field', () => {
+    expect(pals.map((p) => p.id)).toEqual(['Aaa', 'Bbb', 'Ccc'])
+    expect(pals[0]).toEqual({
+      id: 'Aaa',
+      name: 'Ay',
+      dex: '1',
+      types: ['fire'],
+      power: 100,
+      priority: 10000,
+      maleProb: 0.3,
+      guaranteed: [],
+      sprite: '/sprites/Aaa.webp',
+    })
+    expect(pals[2]!.dex).toBe('2B')
+    expect(pals[1]!.dex).toBe('2')
+    expect(pals[2]!.maleProb).toBe(0.5)
+  })
+
+  it('serialises the matrix little-endian', () => {
+    expect([...matrixToBuffer(new Uint16Array([0x0001, MATRIX_UNSET, GENDER_SENTINEL]))]).toEqual([
+      0x01, 0x00, 0xfe, 0xff, 0xff, 0xff,
+    ])
+    expect([...matrixToBuffer(new Uint16Array([0x1234]))]).toEqual([0x34, 0x12])
+  })
+
+  it('finds pals whose only producer is themselves', () => {
+    expect(computeSameSpeciesOnly(pals, matrix, [])).toEqual([2])
+  })
+
+  it('excludes pals reachable through a gender-locked combo', () => {
+    const locked = [{ a: 0, aGender: 'F' as const, b: 1, bGender: 'M' as const, child: 2 }]
+    expect(computeSameSpeciesOnly(pals, matrix, locked)).toEqual([])
+  })
+
+  it('maps uniques case-insensitively and drops unknown pals', () => {
+    const { unique, dropped } = mapUniques(pals, [
+      { parentA: 'aaa', parentB: 'BBB', childId: 'Ccc' },
+      { parentA: 'Aaa', parentB: 'Zzz', childId: 'Ccc' },
+      { parentA: 'Aaa', parentB: 'Bbb', childId: 'Nope' },
+    ])
+    expect(unique).toEqual([{ a: 0, b: 1, child: 2 }])
+    expect(dropped).toEqual([
+      { parentA: 'Aaa', parentB: 'Zzz', childId: 'Ccc' },
+      { parentA: 'Aaa', parentB: 'Bbb', childId: 'Nope' },
+    ])
+  })
+
+  it('drops Test* passives and sorts the rest by id', () => {
+    const passives = buildPassives(db)
+    expect(passives.map((p) => p.id)).toEqual(['Runner', 'Swift'])
+    expect(passives[1]).toEqual({
+      id: 'Swift',
+      name: 'Swift',
+      rank: 2,
+      randomAllowed: true,
+      randomWeight: 50,
+      standard: true,
+    })
+  })
+
+  it('rejects an unrecognised gender value', () => {
+    const bad = [
+      ...entries,
+      {
+        Parent1InternalName: 'Aaa',
+        Parent1Gender: 'NEITHER',
+        Parent2InternalName: 'Bbb',
+        Parent2Gender: 'MALE',
+        ChildInternalName: 'Ccc',
+      },
+    ]
+    expect(() => buildMatrix(pals, bad)).toThrow(/unexpected gender value: NEITHER/)
+  })
+
+  it('rejects breeding rows naming an unknown pal', () => {
+    expect(() => buildMatrix(pals, [{ ...entries[0]!, ChildInternalName: 'Zzz' }])).toThrow(/unknown pal: Zzz/)
+  })
+
+  it('reports no gender-locked pairs when every row is a wildcard', () => {
+    expect(genderLocked).toEqual([])
+  })
+})
 
 const DB = '.cache/db.json'
 const BREEDING = '.cache/breeding.json'
@@ -21,7 +115,8 @@ const TYPES = 'data/palpedia-types.json'
 const UNIQUES = 'data/palpedia-uniques.json'
 const hasCache = existsSync(DB) && existsSync(BREEDING) && existsSync(TYPES) && existsSync(UNIQUES)
 
-describe.skipIf(!hasCache)('transform against cached palcalc data', () => {
+// `describe.skipIf` still runs the callback body, so the cache reads have to stay behind the guard.
+function loadCacheFixture() {
   const db = JSON.parse(readFileSync(DB, 'utf8')) as PalcalcDb
   const breeding = JSON.parse(readFileSync(BREEDING, 'utf8')) as BreedingFile
   const types = JSON.parse(readFileSync(TYPES, 'utf8')) as Record<string, string[]>
@@ -30,13 +125,34 @@ describe.skipIf(!hasCache)('transform against cached palcalc data', () => {
     parentB: string
     childId: string
   }>
-
   const pals = buildPals(db, types)
-  const n = pals.length
-  const byId = indexById(pals)
   const { matrix, genderLocked } = buildMatrix(pals, breeding.Breeding)
   const { combos } = buildCombos(pals, matrix, uniques, genderLocked)
-  const goldens = buildGoldens(pals, breeding.Breeding, combos, matrix)
+  return {
+    db,
+    breeding,
+    pals,
+    matrix,
+    combos,
+    goldens: buildGoldens(pals, breeding.Breeding, combos, matrix),
+  }
+}
+
+describe.skipIf(!hasCache)('transform against cached palcalc data', () => {
+  let db: PalcalcDb
+  let breeding: BreedingFile
+  let pals: ReturnType<typeof buildPals>
+  let matrix: Uint16Array
+  let combos: ReturnType<typeof buildCombos>['combos']
+  let goldens: ReturnType<typeof buildGoldens>
+  let n: number
+  let byId: Map<string, number>
+
+  beforeAll(() => {
+    ;({ db, breeding, pals, matrix, combos, goldens } = loadCacheFixture())
+    n = pals.length
+    byId = indexById(pals)
+  })
 
   it('is symmetric on 100 sampled pairs', () => {
     const rng = mulberry32(1234)
