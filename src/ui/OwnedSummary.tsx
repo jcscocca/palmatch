@@ -37,6 +37,12 @@ export interface OwnedSummaryProps {
   playerRows: number
   /** Inline confirmation for SHARE / DOWNLOAD — announced politely, not as a toast over the dialog. */
   note: string | null
+  /**
+   * Set only when this import read a lone `Level.sav` without looking around it for pal storage
+   * files. Dim and factual by design: an import that *did* look and found none is complete, and
+   * says nothing.
+   */
+  storageNote?: string | null
   onImportAgain: () => void
   onClear: () => void
   onShare: () => void
@@ -59,6 +65,7 @@ export function OwnedSummary({
   sourceLabel,
   playerRows,
   note,
+  storageNote = null,
   onImportAgain,
   onClear,
   onShare,
@@ -91,6 +98,8 @@ export function OwnedSummary({
   return (
     <div className="owned-summary">
       <p className="count-line">{countLine}</p>
+
+      {storageNote !== null && <p className="panel-note">{storageNote}</p>}
 
       {/*
         One line for the whole grid, not one per cell. A list from before genders were stored, or

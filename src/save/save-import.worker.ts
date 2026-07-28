@@ -1,12 +1,16 @@
-import { parseSave } from './parse.ts'
+import { parseSaveSet } from './parse.ts'
 import { ParseError, type SaveImportRequest, type SaveImportResponse } from './types.ts'
 
 /**
  * Save parsing off the main thread: a 400 MB decompress plus a full property walk would otherwise
  * freeze the tab for seconds. Same protocol as `chains.worker.ts` — the request id comes back on the
- * answer so a stale reply is discardable — with two differences: the ArrayBuffer is transferred
+ * answer so a stale reply is discardable — with two differences: the ArrayBuffers are transferred
  * rather than copied, and failures carry a `ParseErrorCode` instead of a message, because the panel
  * switches on the code exhaustively to choose its copy.
+ *
+ * One request can carry several files — a `Level.sav` and any pal storage files beside it — and
+ * still answers exactly once, with one merged result. Only the `Level.sav` can fail the request;
+ * `parseSaveSet` turns a broken storage file into a warning.
  *
  * Contract with the panel: every failure has a code from `ParseErrorCode`. Anything the parser
  * didn't anticipate lands on `internal` rather than being dressed up as a diagnosis of the file.
@@ -35,7 +39,7 @@ async function run(req: SaveImportRequest | undefined): Promise<void> {
   const requestId = req?.requestId ?? -1
   try {
     if (req === undefined) throw new TypeError('the import worker was sent a message with no request in it')
-    const result = await parseSave(req.buffer, new Map(req.byIdLower))
+    const result = await parseSaveSet(req.buffer, req.storage ?? [], new Map(req.byIdLower))
     ctx.postMessage({ ok: true, requestId, result })
   } catch (cause) {
     const response: SaveImportResponse =

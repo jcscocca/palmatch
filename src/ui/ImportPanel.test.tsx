@@ -4,7 +4,14 @@ import { loadDatasetFromDisk } from '../engine/dataset.ts'
 import type { Dataset } from '../engine/types.ts'
 import { levelGvas, plz1 } from '../save/fixtures/builder.ts'
 import { MAX_SAVE_BYTES } from '../save/parse.ts'
-import type { ImportResult, OwnedPal, ParseErrorCode, SaveImportRequest, SaveImportResponse } from '../save/types.ts'
+import type {
+  ImportResult,
+  ImportSource,
+  OwnedPal,
+  ParseErrorCode,
+  SaveImportRequest,
+  SaveImportResponse,
+} from '../save/types.ts'
 import { encodeOwnedShare, shareJson } from '../state/owned-share.ts'
 import { useOwnedStore } from '../state/owned.ts'
 import type { OwnedBySpecies } from '../state/owned.ts'
@@ -87,14 +94,21 @@ function ownedPal(speciesIndex: number): OwnedPal {
   return { speciesIndex, gender: 'F', passives: ['Swift'], talents: null }
 }
 
-function importResult(owned: OwnedPal[], warnings: string[] = [], playerRows = 0): ImportResult {
+function importResult(
+  owned: OwnedPal[],
+  warnings: string[] = [],
+  playerRows = 0,
+  sources: ImportSource[] = [{ label: 'Level.sav', kind: 'level', palCount: owned.length }],
+): ImportResult {
   return {
     owned,
+    sources,
     unknownSpecies: [],
     unknownPals: 0,
     oddTypes: [],
     playerRows,
     unreadableRows: 0,
+    vacantSlots: 0,
     palCount: owned.length,
     warnings,
   }
@@ -136,8 +150,9 @@ function dropZone(): HTMLElement {
   return screen.getByTestId('drop-zone')
 }
 
-function drop(file: File): void {
-  fireEvent.drop(dropZone(), { dataTransfer: { files: [file] } })
+/** Variadic because `Level.sav` and the `_dps.sav` files beside it are meant to be dragged together. */
+function drop(...files: File[]): void {
+  fireEvent.drop(dropZone(), { dataTransfer: { files } })
 }
 
 /**
@@ -927,6 +942,151 @@ describe('ImportPanel', () => {
 
     fireEvent.click(screen.getByText('FIND MY SAVE FOLDER'))
     await waitFor(() => expect(screen.getByText(/no Level\.sav in that folder/)).toBeTruthy())
+  })
+
+  describe('pal storage files', () => {
+    function storageFile(name: string): File {
+      return new File([saveBytes()], name)
+    }
+
+    /** A world folder, optionally with a `Players/` beside its save. */
+    function worldDir(players: Array<{ kind: 'file'; name: string; getFile: () => Promise<File> }> | null) {
+      return {
+        kind: 'directory' as const,
+        name: 'world-1',
+        values: async function* () {
+          yield { kind: 'file' as const, name: 'Level.sav', getFile: () => Promise.resolve(saveFile()) }
+          if (players !== null) {
+            yield {
+              kind: 'directory' as const,
+              name: 'Players',
+              values: async function* () {
+                for (const entry of players) yield entry
+              },
+            }
+          }
+        },
+      }
+    }
+
+    function fileEntry(name: string) {
+      return { kind: 'file' as const, name, getFile: () => Promise.resolve(storageFile(name)) }
+    }
+
+    it('sends every storage file dropped beside the save, transferring all of their buffers', async () => {
+      show()
+      drop(saveFile(), storageFile('0001_dps.sav'), storageFile('GlobalPalStorage.sav'))
+
+      const worker = await posted()
+      const request = worker.posted[0]
+      expect(request.storage?.map((s) => s.label)).toEqual(['0001_dps.sav', 'GlobalPalStorage.sav'])
+      // Handed over rather than copied, same as the save itself — a Dimensional Pal Storage is not
+      // worth a structured clone.
+      expect(worker.transfers[0]).toEqual([request.buffer, ...(request.storage ?? []).map((s) => s.buffer)])
+    })
+
+    it('ignores files in the selection that are neither the save nor a pal store', async () => {
+      show()
+      drop(storageFile('WorldOption.sav'), saveFile(), storageFile('0001_dps.sav'))
+
+      const request = (await posted()).posted[0]
+      expect(request.storage?.map((s) => s.label)).toEqual(['0001_dps.sav'])
+    })
+
+    it('collects the _dps.sav files beside a save and the Global Palbox above it', async () => {
+      // The real tree: `SaveGames/<user-id>/GlobalPalStorage.sav` is a *sibling* of the world
+      // folders, so only a walk that started at or above the user-id folder can reach it.
+      vi.stubGlobal('showDirectoryPicker', () =>
+        Promise.resolve({
+          kind: 'directory' as const,
+          name: 'SaveGames',
+          values: async function* () {
+            yield {
+              kind: 'directory' as const,
+              name: '76561198000000000',
+              values: async function* () {
+                yield fileEntry('GlobalPalStorage.sav')
+                yield worldDir([fileEntry('0001_dps.sav'), fileEntry('0002_dps.sav')])
+              },
+            }
+          },
+        }),
+      )
+      show()
+
+      fireEvent.click(screen.getByText('FIND MY SAVE FOLDER'))
+      const request = (await posted()).posted[0]
+      expect(request.storage?.map((s) => s.label)).toEqual(['0001_dps.sav', '0002_dps.sav', 'GlobalPalStorage.sav'])
+    })
+
+    it('leaves the other saves in Players/ alone — they are profiles, not pals', async () => {
+      // The field case: a two-player co-op world whose `Players/` holds two profile saves and no
+      // `_dps.sav` at all, because nobody has built the storage.
+      vi.stubGlobal('showDirectoryPicker', () =>
+        Promise.resolve(worldDir([fileEntry('0001.sav'), fileEntry('0002.sav')])),
+      )
+      show()
+
+      fireEvent.click(screen.getByText('FIND MY SAVE FOLDER'))
+      const worker = await posted()
+      expect(worker.posted[0].storage).toEqual([])
+
+      worker.reply({ ok: true, requestId: worker.posted[0].requestId, result: importResult([ownedPal(idx('Lamball'))]) })
+
+      // Nothing to say: the folder was walked and it holds no pal storage, which is what most saves
+      // look like. A complete import must read as complete.
+      expect(screen.getByText(/from Level\.sav$/)).toBeTruthy()
+      expect(screen.queryByText(/Dimensional Pal Storage/)).toBeNull()
+      expect(screen.queryByText(/storage file/)).toBeNull()
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('says it read Level.sav only when a single file was handed to it', async () => {
+      show()
+      drop(saveFile())
+      const worker = await posted()
+      worker.reply({ ok: true, requestId: worker.posted[0].requestId, result: importResult([ownedPal(idx('Lamball'))]) })
+
+      // Said only because nobody looked — and phrased as what was read, not as a claim that pals are
+      // missing. Most players have no Dimensional Pal Storage at all.
+      expect(screen.getByText(/read Level\.sav only — if you use Dimensional Pal Storage/)).toBeTruthy()
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('names the storage files it actually read in the summary line', async () => {
+      show()
+      drop(saveFile(), storageFile('0001_dps.sav'), storageFile('0002_dps.sav'))
+      const worker = await posted()
+      worker.reply({
+        ok: true,
+        requestId: worker.posted[0].requestId,
+        result: importResult([ownedPal(idx('Lamball'))], [], 0, [
+          { label: 'Level.sav', kind: 'level', palCount: 1 },
+          { label: '0001_dps.sav', kind: 'storage', palCount: 0 },
+          { label: '0002_dps.sav', kind: 'storage', palCount: 0 },
+        ]),
+      })
+
+      expect(screen.getByText(/from Level\.sav · 2 storage files$/)).toBeTruthy()
+      expect(screen.queryByText(/read Level\.sav only/)).toBeNull()
+    })
+
+    it('counts only the storage files the parser could read, not the ones it was sent', async () => {
+      show()
+      drop(saveFile(), storageFile('0001_dps.sav'), storageFile('0002_dps.sav'))
+      const worker = await posted()
+      worker.reply({
+        ok: true,
+        requestId: worker.posted[0].requestId,
+        result: importResult([ownedPal(idx('Lamball'))], ["couldn't read 0002_dps.sav, so any pals kept in it are not counted: junk"], 0, [
+          { label: 'Level.sav', kind: 'level', palCount: 1 },
+          { label: '0001_dps.sav', kind: 'storage', palCount: 0 },
+        ]),
+      })
+
+      expect(screen.getByText(/from Level\.sav · 1 storage file$/)).toBeTruthy()
+      expect(screen.getByText(/couldn't read 0002_dps\.sav/)).toBeTruthy()
+    })
   })
 
   describe('genders in the summary', () => {

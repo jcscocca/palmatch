@@ -109,12 +109,22 @@ function readSaveParameter(cur: Cursor, out: CharacterFields, slots: TalentSlots
 }
 
 /**
- * Reads one pal out of its `RawData` bytes. The 4 unknown bytes, guild GUID and 4 trailing bytes
- * that follow the property tree are ignored — palcalc doesn't even read the last four, so their
- * presence is not something to assert on.
+ * Reads one pal out of the property list that holds its `SaveParameter`, leaving the cursor on that
+ * list's `None` terminator. Two containers produce such a list and they are *not* nested the same
+ * way:
+ *
+ * - `Level.sav` wraps each record in a `RawData` byte array that is a second, self-contained
+ *   property tree (reference §4.2) — `readCharacterFields` below.
+ * - A pal storage file (`_dps.sav`, `GlobalPalStorage.sav`) has no `RawData` at all: each element of
+ *   its `SaveParameterArray` *is* the property list, carrying `SaveParameter` beside an `InstanceId`
+ *   struct (`PC CharacterInstanceVisitor.cs:422` registers `.SaveParameterArray.SaveParameter`,
+ *   against `.Value.RawData.SaveParameter` at `:361`; `PC CharacterReader.cs:39` matches the
+ *   `RawData` path exactly, so it cannot fire for storage files).
+ *
+ * The `SaveParameter` struct itself is identical in both, which is why everything below this line is
+ * shared.
  */
-export function readCharacterFields(raw: Uint8Array, path: string): CharacterFields {
-  const cur = new Cursor(raw, path)
+export function readCharacterList(cur: Cursor): CharacterFields {
   const out: CharacterFields = {
     characterId: null,
     gender: null,
@@ -137,6 +147,15 @@ export function readCharacterFields(raw: Uint8Array, path: string): CharacterFie
     out.talents = { hp: slots.hp ?? 0, shot: slots.shot ?? 0, defense: slots.defense ?? 0 }
   }
   return out
+}
+
+/**
+ * The `Level.sav` form: one pal out of its `RawData` bytes. The 4 unknown bytes, guild GUID and 4
+ * trailing bytes that follow the property tree are ignored — palcalc doesn't even read the last
+ * four, so their presence is not something to assert on.
+ */
+export function readCharacterFields(raw: Uint8Array, path: string): CharacterFields {
+  return readCharacterList(new Cursor(raw, path))
 }
 
 /**

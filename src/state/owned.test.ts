@@ -21,11 +21,13 @@ function pal(speciesIndex: number, passives: string[] = [], gender: GenderCode |
 function result(owned: OwnedPal[], warnings: string[] = [], playerRows = 1): ImportResult {
   return {
     owned,
+    sources: [{ label: 'Level.sav', kind: 'level', palCount: owned.length }],
     unknownSpecies: [],
     unknownPals: 0,
     oddTypes: [],
     playerRows,
     unreadableRows: 0,
+    vacantSlots: 0,
     palCount: owned.length,
     warnings,
   }

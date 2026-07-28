@@ -264,10 +264,11 @@ export interface PalSpec {
 }
 
 /**
- * The `SaveParameter` tree that lives inside one map entry's `RawData`, plus the 4 unknown bytes,
- * guild GUID and 4 trailing bytes that follow it (reference §4.2).
+ * The body of one `SaveParameter` struct. Shared by both fixtures on purpose: the struct is byte-for
+ * byte the same in a `Level.sav` map entry and in a storage file's array element — only what wraps
+ * it differs, and *that* is what `characterRawData` and `storageGvas` each write for themselves.
  */
-export function characterRawData(spec: PalSpec = {}): Uint8Array {
+function saveParameterBody(spec: PalSpec = {}): Uint8Array {
   const {
     characterId = 'SheepBall',
     gender = 'Female',
@@ -281,7 +282,7 @@ export function characterRawData(spec: PalSpec = {}): Uint8Array {
   } = spec
 
   const number = talentType === 'byte' ? byteProp : talentType === 'int' ? intProp : floatProp
-  const body = build((b) => {
+  return build((b) => {
     if (characterId !== null) nameProp(b, 'CharacterID', characterId)
     if (gender !== null) enumProp(b, 'Gender', 'EPalGenderType', `EPalGenderType::${gender}`)
     if (nickName !== null) strProp(b, 'NickName', nickName, true)
@@ -327,9 +328,15 @@ export function characterRawData(spec: PalSpec = {}): Uint8Array {
     if (isPlayer !== null) boolProp(b, 'IsPlayer', isPlayer)
     none(b)
   })
+}
 
+/**
+ * The `Level.sav` nesting: one map entry's `RawData` blob — the `SaveParameter` tree, then the 4
+ * unknown bytes, guild GUID and 4 trailing bytes that follow it (reference §4.2).
+ */
+export function characterRawData(spec: PalSpec = {}): Uint8Array {
   return build((w) => {
-    structProp(w, 'SaveParameter', 'PalIndividualCharacterSaveParameter', body)
+    structProp(w, 'SaveParameter', 'PalIndividualCharacterSaveParameter', saveParameterBody(spec))
     none(w)
     w.u32(0).guid(7).u32(0) // unknown 4 + guild guid + trailing 4
   })
@@ -414,6 +421,84 @@ export function levelGvas(spec: SaveSpec = {}): Uint8Array {
     if (!omitWorldSaveData) structProp(w, 'worldSaveData', 'PalWorldSaveData', worldSaveData)
     none(w)
     w.u32(0) // gvas trailer
+  })
+}
+
+export interface StorageSpec {
+  /** `null` is a vacant slot: present in the array, `CharacterID` at its `None` default. */
+  pals?: Array<PalSpec | null>
+  className?: string
+  customVersionCount?: number
+  /** Bytes of skipped sibling written before the array, as `levelGvas` does for the map. */
+  padBytes?: number
+  corruptPadSize?: number
+  /** Lie about the array's size, so consumed != declared once every element is read. */
+  corruptArraySize?: number
+  /** Produces a save with no `SaveParameterArray` at all — a `Level.sav` picked by mistake. */
+  omitStorageArray?: boolean
+}
+
+/**
+ * One `SaveParameterArray` element. Unlike a `CharacterSaveParameterMap` value there is no `RawData`
+ * indirection at all: the pal's `SaveParameter` sits directly in the element's property list, beside
+ * an `InstanceId` struct we skip (`PC CharacterInstanceVisitor.cs:402-403, 422`).
+ */
+function storageEntry(index: number, spec: PalSpec | null): Uint8Array {
+  return build((w) => {
+    structProp(
+      w,
+      'InstanceId',
+      'PalInstanceID',
+      build((s) => {
+        structProp(s, 'PlayerUId', 'Guid', build((g) => void g.guid(index + 1)))
+        structProp(s, 'InstanceId', 'Guid', build((g) => void g.guid(index + 2)))
+        none(s)
+      }),
+    )
+    // A vacant slot keeps its element and drops the id: `CharacterID` absent is how the format
+    // spells "empty", since storage slots are recycled in place rather than removed.
+    const pal = spec ?? { characterId: null, gender: null }
+    structProp(w, 'SaveParameter', 'PalIndividualCharacterSaveParameter', saveParameterBody(pal))
+    none(w)
+  })
+}
+
+/** A complete uncompressed GVAS blob for a `_dps.sav` / `GlobalPalStorage.sav`. */
+export function storageGvas(spec: StorageSpec = {}): Uint8Array {
+  const {
+    pals = [{}],
+    className = '/Script/Pal.PalWorldSaveGame',
+    customVersionCount = 3,
+    padBytes = 0,
+    corruptPadSize = 0,
+    corruptArraySize = 0,
+    omitStorageArray = false,
+  } = spec
+
+  return build((w) => {
+    w.u32(0x53415647)
+    w.i32(3)
+    w.i32(522).i32(1008)
+    w.u16(5).u16(1).u16(1).u32(0)
+    w.fstring('++UE5+Release-5.1')
+    w.i32(3)
+    w.u32(customVersionCount)
+    for (let i = 0; i < customVersionCount; i++) w.guid(i + 1).i32(1)
+    w.fstring(className)
+
+    intProp(w, 'Version', 100)
+    if (padBytes > 0) padProp(w, 'SomeOtherRootThing', padBytes, corruptPadSize)
+    if (!omitStorageArray) {
+      structArrayProp(
+        w,
+        'SaveParameterArray',
+        'PalIndividualCharacterSlotSaveParameter',
+        pals.map((pal, i) => storageEntry(i, pal)),
+        corruptArraySize,
+      )
+    }
+    none(w)
+    w.u32(0)
   })
 }
 

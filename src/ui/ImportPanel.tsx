@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent, KeyboardEvent, ReactNode } from 'react'
 import { buildLowerLookup } from '../lib/lower-lookup.ts'
-import type { ParseErrorCode, SaveImportRequest, SaveImportResponse } from '../save/types.ts'
+import type { ImportSource, ParseErrorCode, SaveImportRequest, SaveImportResponse, StorageInput } from '../save/types.ts'
 import { useOwnedStore } from '../state/owned.ts'
 import type { SharedSpecies } from '../state/owned.ts'
 import { useDataset } from './dataset-context.ts'
@@ -57,15 +57,74 @@ const REPORT_URL = 'https://github.com/jcscocca/palmatch/issues'
 const DOWNLOAD_NAME = 'my-pals.palmatch.json'
 
 /**
+ * Said once, after a lone `Level.sav`, and phrased as a fact about what was read rather than as a
+ * claim that pals are missing: most players never build a Dimensional Pal Storage at all, and
+ * telling all of them their import is incomplete would be both wrong and alarming.
+ */
+const LONE_SAVE_NOTE =
+  'read Level.sav only — if you use Dimensional Pal Storage, pick your save folder instead and those pals come too'
+
+/**
  * The panel's failure vocabulary: every `ParseErrorCode` the worker can send, plus the three things
  * that go wrong before or beside the parser. Switched exhaustively in `errorCopy` with a
  * never-bound default, so a new parser code can't ship without copy to explain it.
  */
 type PanelErrorCode = ParseErrorCode | 'timeout' | 'bad-share' | 'no-save-found'
 
+/**
+ * A pal store that isn't `Level.sav`: a player's Dimensional Pal Storage (`Players/<uid>_dps.sav`,
+ * ~9,600 slots and where duplicate catches and breeding leftovers get dumped) or the account-wide
+ * Global Palbox (`SaveGames/<userid>/GlobalPalStorage.sav`). Both are optional files that only exist
+ * once the feature has been used, which is why nothing here treats their absence as a problem.
+ */
+interface StorageFile {
+  label: string
+  file: File
+}
+
 interface SaveCandidate {
   path: string
   file: File
+  storage: StorageFile[]
+  /**
+   * True when the folder around this save was walked, so an empty `storage` means "this world has
+   * none" rather than "nobody looked". Only the second is worth telling the player about.
+   */
+  scanned: boolean
+}
+
+function candidateOf(file: File, storage: StorageFile[] = [], scanned = false): SaveCandidate {
+  return { path: file.name, file, storage, scanned }
+}
+
+/** `<uid>_dps.sav`. The other `.sav` files in `Players/` are player profiles and hold no pals. */
+function isDimensionalStorage(name: string): boolean {
+  return name.toLowerCase().endsWith('_dps.sav')
+}
+
+function isGlobalPalbox(name: string): boolean {
+  return name.toLowerCase() === 'globalpalstorage.sav'
+}
+
+/**
+ * Splits a multi-file drop or `<input multiple>` selection into the save and the pal stores beside
+ * it. The player is expected to shift-select `Level.sav` and the `_dps.sav` files together, so the
+ * primary is chosen by name and only recognised storage names ride along — anything else in the
+ * selection is ignored rather than guessed at.
+ */
+function classifyFiles(files: File[]): { primary: File; storage: StorageFile[] } | null {
+  if (files.length === 0) return null
+  const storage: StorageFile[] = []
+  const rest: File[] = []
+  for (const file of files) {
+    if (isDimensionalStorage(file.name) || isGlobalPalbox(file.name)) storage.push({ label: file.name, file })
+    else rest.push(file)
+  }
+  const named = rest.find((f) => f.name.toLowerCase() === 'level.sav')
+  // With nothing that looks like a `Level.sav`, the first file is still handed over: it may be a
+  // shared list, and if it is a lone `_dps.sav` the parser's "you want Level.sav" is the right answer.
+  const primary = named ?? rest[0] ?? files[0]
+  return { primary, storage: storage.filter((s) => s.file !== primary).slice(0, MAX_STORAGE_FILES) }
 }
 
 type PanelState =
@@ -173,27 +232,81 @@ function directoryPicker(): (() => Promise<FsDirectoryHandle>) | null {
 const MAX_WALK_DEPTH = 2
 const MAX_CANDIDATES = 12
 const MAX_DIRECTORIES = 64
+/** One `_dps.sav` per player, so this only binds on a large dedicated server. */
+const MAX_STORAGE_FILES = 32
 
+/**
+ * The `Players/` folder beside a `Level.sav`, read only for `_dps.sav`. It is walked outside the
+ * depth limit — `SaveGames/<id>/<world>/Players/` is one level deeper than the deepest `Level.sav`
+ * we look for — but inside the directory budget, so it can't turn a mistaken pick into a disk crawl.
+ */
+async function readDimensionalStorage(dir: FsDirectoryHandle, budget: { dirs: number }): Promise<StorageFile[]> {
+  if (budget.dirs <= 0) return []
+  budget.dirs--
+  const out: StorageFile[] = []
+  for await (const entry of dir.values()) {
+    if (out.length >= MAX_STORAGE_FILES) break
+    if (entry.kind !== 'file' || !isDimensionalStorage(entry.name)) continue
+    const file = await entry.getFile()
+    if (file.size <= MAX_FILE_BYTES) out.push({ label: entry.name, file })
+  }
+  return out
+}
+
+/**
+ * `SaveGames/<steam-id>/<world-id>/Level.sav`, so two levels below whatever the player picked — and
+ * they may equally have picked the world folder itself, hence the search rather than a fixed path.
+ * Bounded on every axis: a player who picks their home directory by mistake gets a quick "nothing
+ * here", not a full-disk walk.
+ *
+ * `inherited` carries a `GlobalPalStorage.sav` down from an ancestor: the Global Palbox is
+ * account-wide and sits *beside* the world folders (`SaveGames/<userid>/`), not inside one, so it is
+ * only reachable when the player picked at or above that level — which is exactly why FIND MY SAVE
+ * FOLDER is the recommended path.
+ */
 async function walkForSaves(
   dir: FsDirectoryHandle,
   path: string,
   depth: number,
   out: SaveCandidate[],
   budget: { dirs: number },
+  inherited: StorageFile[] = [],
 ): Promise<void> {
   if (out.length >= MAX_CANDIDATES || budget.dirs <= 0) return
   budget.dirs--
   const subdirs: Array<{ handle: FsDirectoryHandle; path: string }> = []
+  const found: Array<{ path: string; file: File }> = []
+  let players: FsDirectoryHandle | null = null
+  const globals = [...inherited]
   for await (const entry of dir.values()) {
     if (entry.kind === 'file') {
-      if (entry.name.toLowerCase() === 'level.sav' && out.length < MAX_CANDIDATES) {
-        out.push({ path: `${path}${entry.name}`, file: await entry.getFile() })
+      const lower = entry.name.toLowerCase()
+      if (lower === 'level.sav' && out.length + found.length < MAX_CANDIDATES) {
+        found.push({ path: `${path}${entry.name}`, file: await entry.getFile() })
+      } else if (isGlobalPalbox(lower) && globals.length < MAX_STORAGE_FILES) {
+        const file = await entry.getFile()
+        if (file.size <= MAX_FILE_BYTES) globals.push({ label: entry.name, file })
       }
+    } else if (entry.name.toLowerCase() === 'players') {
+      // Held aside rather than recursed into: it holds per-player saves, never a world.
+      players = entry
     } else if (depth < MAX_WALK_DEPTH) {
       subdirs.push({ handle: entry, path: `${path}${entry.name}/` })
     }
   }
-  for (const sub of subdirs) await walkForSaves(sub.handle, sub.path, depth + 1, out, budget)
+
+  if (found.length > 0) {
+    // Opened only now that this folder has proven to be a world folder.
+    const beside = players === null ? [] : await readDimensionalStorage(players, budget)
+    for (const level of found) out.push({ ...level, storage: [...beside, ...globals], scanned: true })
+  }
+  for (const sub of subdirs) await walkForSaves(sub.handle, sub.path, depth + 1, out, budget, globals)
+}
+
+/** `Level.sav · 2 storage files`, or just the save's name when it was the only file read. */
+function sourceLabelOf(base: string, sources: ImportSource[]): string {
+  const extra = sources.filter((s) => s.kind === 'storage').length
+  return extra === 0 ? base : `${base} · ${extra} storage file${extra === 1 ? '' : 's'}`
 }
 
 export interface ImportPanelProps {
@@ -233,6 +346,12 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
 
   const [state, setState] = useState<PanelState>(dropReady ? { status: 'picking' } : { status: 'idle' })
   const [note, setNote] = useState<string | null>(null)
+  /**
+   * Shown only after an import that read a `Level.sav` and nothing else *without looking* around it.
+   * Deliberately not persisted: it is a nudge about how this one import was made, not a fact about
+   * the list, and a stored list has no way of knowing whether its folder held a `_dps.sav`.
+   */
+  const [storageNote, setStorageNote] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
 
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -336,13 +455,14 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
       }
       loadShared(species, label)
       setNote(dropped === 0 ? null : `${dropped} species in that list are unknown to this version and were left out`)
+      setStorageNote(null)
       setState({ status: 'idle' })
     },
     [abortInFlight, loadShared],
   )
 
   const parseInWorker = useCallback(
-    (label: string, buffer: ArrayBuffer): void => {
+    (label: string, buffer: ArrayBuffer, storage: StorageInput[], scanned: boolean): void => {
       abortInFlight()
       const id = inFlightRef.current.id + 1
       inFlightRef.current = { id, expired: false }
@@ -373,7 +493,11 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
         if (inFlightRef.current.expired || data.requestId !== inFlightRef.current.id) return
         settle()
         if (data.ok) {
-          setOwned(data.result, label)
+          setOwned(data.result, sourceLabelOf(label, data.result.sources))
+          // Only when nobody looked. A walked save folder with no `_dps.sav` in it is the normal
+          // case — most players never build the storage — and saying anything there would turn a
+          // complete import into a nagging one.
+          setStorageNote(scanned || storage.length > 0 ? null : LONE_SAVE_NOTE)
           setState({ status: 'idle' })
         } else {
           setState({ status: 'error', code: data.code, detail: data.detail, label })
@@ -389,8 +513,8 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
         setState({ status: 'error', code: 'internal', detail, label })
       }
 
-      const request: SaveImportRequest = { requestId: id, buffer, byIdLower }
-      worker.postMessage(request, [buffer])
+      const request: SaveImportRequest = { requestId: id, buffer, byIdLower, storage }
+      worker.postMessage(request, [buffer, ...storage.map((s) => s.buffer)])
       timerRef.current = setTimeout(() => {
         if (inFlightRef.current.id !== id || inFlightRef.current.expired) return
         settle()
@@ -401,8 +525,10 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
   )
 
   const ingest = useCallback(
-    (file: File): void => {
+    (candidate: SaveCandidate): void => {
+      const { file, storage, scanned } = candidate
       setNote(null)
+      setStorageNote(null)
       // Before the async read, not after it: from here on the panel is committed to this file, and
       // an earlier parse still running must not be allowed to land on top of whatever it produces.
       abortInFlight()
@@ -418,11 +544,24 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
         })
         return
       }
+      // Every storage file's bytes are read alongside the save's, so all of them can be transferred
+      // to the worker in one message: the protocol answers once, with one merged result. A storage
+      // file that won't even read off disk — a revoked permission, a drive pulled mid-import —
+      // resolves to null and is left behind rather than rejecting the whole `Promise.all`: the same
+      // rule the parser applies to one that won't parse.
       setState({ status: 'parsing', label: file.name, bytes: file.size })
+      const storageBytes = Promise.all(
+        storage.map((s) =>
+          s.file.arrayBuffer().then(
+            (buffer): StorageInput | null => ({ label: s.label, buffer }),
+            () => null,
+          ),
+        ),
+      )
       // The codec await is normally already settled (it was warmed on mount) — it is here because
       // telling a `.palmatch.json` from a `.sav` needs the payload validator.
-      Promise.all([file.arrayBuffer(), loadCodec()]).then(
-        ([buffer, codec]) => {
+      Promise.all([file.arrayBuffer(), loadCodec(), storageBytes]).then(
+        ([buffer, codec, storageInputs]) => {
           // Reading a few hundred MB outlives an impatient close, and outlives a second drop. The
           // first guard stops a worker being started after the unmount cleanup ran (nothing would
           // be left to terminate it); the second stops a slow save's read finishing *after* a small
@@ -443,7 +582,12 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
             applyShare(species, dropped, file.name)
             return
           }
-          parseInWorker(file.name, buffer)
+          parseInWorker(
+            file.name,
+            buffer,
+            storageInputs.filter((s) => s !== null),
+            scanned,
+          )
         },
         (cause: unknown) => {
           if (closedRef.current || ingestRef.current !== generation) return
@@ -506,7 +650,7 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
             label: dir.name,
           })
         } else if (found.length === 1) {
-          ingest(found[0].file)
+          ingest(found[0])
         } else {
           // Several worlds under one SaveGames folder: which is "the" save is the player's call,
           // and guessing at the biggest one would quietly import the wrong world.
@@ -594,8 +738,10 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault()
-        const file = e.dataTransfer?.files?.[0]
-        if (file !== undefined) ingest(file)
+        // Every dropped file, not just the first: `Level.sav` and the `_dps.sav` files beside it are
+        // meant to be dragged over together.
+        const picked = classifyFiles([...(e.dataTransfer?.files ?? [])])
+        if (picked !== null) ingest(candidateOf(picked.primary, picked.storage))
       }}
       onMouseDown={(e) => {
         downTargetRef.current = e.target
@@ -620,7 +766,10 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
             dragging={dragging}
             hasList={hasList}
             onDragging={setDragging}
-            onFile={ingest}
+            onFile={(files) => {
+              const picked = classifyFiles(files)
+              if (picked !== null) ingest(candidateOf(picked.primary, picked.storage))
+            }}
             onDirectory={directoryPicker() === null ? null : pickDirectory}
             onBack={() => setState({ status: 'idle' })}
           />
@@ -644,7 +793,7 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
             <ul className="save-list">
               {state.candidates.map((candidate) => (
                 <li key={candidate.path}>
-                  <button type="button" className="save-btn" onClick={() => ingest(candidate.file)}>
+                  <button type="button" className="save-btn" onClick={() => ingest(candidate)}>
                     <span className="save-path">{candidate.path}</span>
                     <span className="label-caps">{sizeLabel(candidate.file.size)}</span>
                   </button>
@@ -696,12 +845,14 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
             sourceLabel={sourceLabel}
             playerRows={playerRows}
             note={note}
+            storageNote={storageNote}
             onImportAgain={() => {
               setNote(null)
               setState({ status: 'picking' })
             }}
             onClear={() => {
               setNote(null)
+              setStorageNote(null)
               clearOwned()
             }}
             onShare={onShare}
@@ -740,7 +891,7 @@ interface DropZoneProps {
   dragging: boolean
   hasList: boolean
   onDragging: (dragging: boolean) => void
-  onFile: (file: File) => void
+  onFile: (files: File[]) => void
   /** `null` on a browser without the directory picker — Firefox and Safari, as of writing. */
   onDirectory: (() => void) | null
   onBack: () => void
@@ -777,6 +928,14 @@ function DropZone({ dragging, hasList, onDragging, onFile, onDirectory, onBack }
           drop <strong>Level.sav</strong> here
         </p>
         <p className="panel-note">nothing is uploaded — your save is read here, in this browser</p>
+        {/*
+          Named rather than implied: FIND MY SAVE FOLDER is the only path that can reach the
+          Dimensional Pal Storage files beside a save and the Global Palbox above it, and a player
+          who drags one file has no way of knowing that.
+        */}
+        {onDirectory !== null && (
+          <p className="panel-note">picking the folder instead also picks up any Dimensional Pal Storage</p>
+        )}
       </div>
 
       <div className="import-actions">
@@ -790,12 +949,13 @@ function DropZone({ dragging, hasList, onDragging, onFile, onDirectory, onBack }
           <input
             className="visually-hidden"
             type="file"
+            multiple
             aria-label="choose a save file"
             onChange={(e) => {
-              const file = e.target.files?.[0]
+              const files = [...(e.target.files ?? [])]
               // Cleared so re-picking the same file after a failure fires `change` again.
               e.target.value = ''
-              if (file !== undefined) onFile(file)
+              if (files.length > 0) onFile(files)
             }}
           />
         </label>
@@ -826,6 +986,11 @@ function DropZone({ dragging, hasList, onDragging, onFile, onDirectory, onBack }
             <code>
               ~/.steam/steam/steamapps/compatdata/1623730/pfx/drive_c/users/steamuser/AppData/Local/Pal/Saved/SaveGames/
             </code>
+          </li>
+          <li>
+            <span className="label-caps">DIMENSIONAL PAL STORAGE</span>{' '}
+            <code>&lt;world-id&gt;\Players\&lt;player-id&gt;_dps.sav</code> — select these alongside{' '}
+            <code>Level.sav</code>, or just pick the folder
           </li>
           <li>a shared list works too — drop the <code>.palmatch.json</code> a friend sent you</li>
         </ul>

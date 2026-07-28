@@ -2,8 +2,8 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { loadDatasetFromDisk } from '../engine/dataset.ts'
 import type { Dataset } from '../engine/types.ts'
 import { buildLowerLookup } from '../lib/lower-lookup.ts'
-import { cnk0, junkFile, levelGvas, plm1, plz1, plz2, truncateTo, type PalSpec } from './fixtures/builder.ts'
-import { MAX_SAVE_BYTES, parseSave } from './parse.ts'
+import { cnk0, junkFile, levelGvas, plm1, plz1, plz2, storageGvas, truncateTo, type PalSpec } from './fixtures/builder.ts'
+import { MAX_SAVE_BYTES, parseSave, parseSaveSet, parseStorageSave } from './parse.ts'
 import { codeOf, detailOf } from './test-utils.ts'
 import { ParseError, type ImportResult } from './types.ts'
 
@@ -116,11 +116,13 @@ describe('parseSave', () => {
     const result = await parse(plz1(levelGvas({ pals: [] })))
     expect(result).toEqual({
       owned: [],
+      sources: [{ label: 'Level.sav', kind: 'level', palCount: 0 }],
       unknownSpecies: [],
       unknownPals: 0,
       oddTypes: [],
       playerRows: 0,
       unreadableRows: 0,
+      vacantSlots: 0,
       palCount: 0,
       warnings: [],
     })
@@ -148,6 +150,155 @@ describe('parseSave', () => {
     expect(result.owned).toHaveLength(200)
     expect(result.owned.filter((p) => p.gender === 'M')).toHaveLength(67)
     expect(result.owned[6].talents).toEqual({ hp: 6, shot: 0, defense: 0 })
+  })
+})
+
+describe('parseStorageSave', () => {
+  it('reads a flat SaveParameterArray, which has no RawData indirection at all', async () => {
+    // The one place a storage file diverges from Level.sav: the pal's SaveParameter sits directly in
+    // the array element, beside an InstanceId struct, rather than inside a RawData byte blob
+    // (`PC CharacterInstanceVisitor.cs:422` against `:361`).
+    const result = await parseStorageSave(
+      plz1(storageGvas({ pals: WORLD.filter((p) => p.isPlayer !== true) })),
+      byIdLower,
+    )
+
+    expect(result.palCount).toBe(3)
+    expect(result.owned.map((p) => p.speciesIndex)).toEqual([idx('SheepBall'), idx('CatMage'), idx('LazyDragon')])
+    expect(result.owned[0]).toEqual({
+      speciesIndex: idx('SheepBall'),
+      gender: 'F',
+      passives: ['Legend', 'Swift'],
+      talents: { hp: 80, shot: 55, defense: 30 },
+    })
+    expect(result.sources).toEqual([{ label: 'storage', kind: 'storage', palCount: 3 }])
+  })
+
+  it('counts an empty slot as vacant, not as a damaged row', async () => {
+    // A Dimensional Pal Storage is ~9,600 slots recycled in place, so almost every element is empty.
+    // Calling those unreadable would bury a real problem under thousands of false ones.
+    const result = await parseStorageSave(
+      plz1(storageGvas({ pals: [{ characterId: 'SheepBall' }, null, null, { characterId: 'CatMage' }, null] })),
+      byIdLower,
+    )
+    expect(result.palCount).toBe(2)
+    expect(result.vacantSlots).toBe(3)
+    expect(result.unreadableRows).toBe(0)
+    expect(result.warnings).toEqual([])
+  })
+
+  it('reads the same storage file out of a PlZ2 double-deflate wrapper', async () => {
+    const pals: PalSpec[] = [{ characterId: 'SheepBall' }, { characterId: 'CatMage', clutter: true }]
+    const once = await parseStorageSave(plz1(storageGvas({ pals })), byIdLower)
+    const twice = await parseStorageSave(plz2(storageGvas({ pals })), byIdLower)
+    expect(twice).toEqual(once)
+  })
+
+  it('walks past a sibling root property to reach the array', async () => {
+    const result = await parseStorageSave(plz1(storageGvas({ pals: [{ characterId: 'SheepBall' }], padBytes: 4096 })), byIdLower)
+    expect(result.palCount).toBe(1)
+  })
+
+  it('names a Level.sav handed to it as a storage file', async () => {
+    expect(await codeOf(parseStorageSave(plz1(levelGvas()), byIdLower))).toBe('wrong-file')
+    expect(await detailOf(parseStorageSave(plz1(levelGvas()), byIdLower))).toMatch(/no SaveParameterArray/)
+  })
+
+  it('catches an array whose elements do not add up to its declared size', async () => {
+    const drifted = plz1(storageGvas({ pals: [{ characterId: 'SheepBall' }], corruptArraySize: 16 }))
+    expect(await codeOf(parseStorageSave(drifted, byIdLower))).toBe('skip-drift')
+    expect(await detailOf(parseStorageSave(drifted, byIdLower))).toMatch(/SaveParameterArray.*declares/)
+  })
+})
+
+describe('parseSaveSet', () => {
+  const level = (pals: PalSpec[]): ArrayBuffer => plz1(levelGvas({ pals }))
+  const storage = (label: string, pals: Array<PalSpec | null>): { label: string; buffer: ArrayBuffer } => ({
+    label,
+    buffer: plz1(storageGvas({ pals })),
+  })
+
+  it('sums counts and genders across every file, and names what it read', async () => {
+    const result = await parseSaveSet(
+      level([{ characterId: 'SheepBall', gender: 'Female' }, { characterId: null, isPlayer: true }]),
+      [
+        storage('a_dps.sav', [{ characterId: 'SheepBall', gender: 'Male' }, null, { characterId: 'CatMage', gender: 'Male' }]),
+        storage('GlobalPalStorage.sav', [{ characterId: 'SheepBall', gender: 'Female' }]),
+      ],
+      byIdLower,
+    )
+
+    expect(result.palCount).toBe(4)
+    expect(result.playerRows).toBe(1)
+    expect(result.vacantSlots).toBe(1)
+    expect(result.owned.filter((p) => p.speciesIndex === idx('SheepBall'))).toHaveLength(3)
+    expect(result.owned.filter((p) => p.gender === 'M')).toHaveLength(2)
+    expect(result.owned.filter((p) => p.gender === 'F')).toHaveLength(2)
+    expect(result.sources).toEqual([
+      { label: 'Level.sav', kind: 'level', palCount: 1 },
+      { label: 'a_dps.sav', kind: 'storage', palCount: 2 },
+      { label: 'GlobalPalStorage.sav', kind: 'storage', palCount: 1 },
+    ])
+    expect(result.warnings).toEqual([])
+  })
+
+  it('pools individuals across files rather than capping each one', async () => {
+    // The 5-per-species cap lives in the owned store and runs over everything at once, so the pals
+    // reaching it must arrive in one list — a player whose best Lamball sits in Dimensional Pal
+    // Storage would otherwise never see it.
+    const result = await parseSaveSet(
+      level([{ characterId: 'SheepBall', passives: ['Runner'] }]),
+      [storage('a_dps.sav', [{ characterId: 'SheepBall', passives: ['Legend', 'Swift', 'Musclehead'] }])],
+      byIdLower,
+    )
+    expect(result.owned.map((p) => p.passives)).toEqual([['Runner'], ['Legend', 'Swift', 'Musclehead']])
+  })
+
+  it('unions the species and IV-shape warnings instead of repeating them per file', async () => {
+    const result = await parseSaveSet(
+      level([{ characterId: 'NewPalFrom2027' }, { characterId: 'SheepBall', talents: { hp: 1 }, talentType: 'float' }]),
+      [
+        storage('a_dps.sav', [{ characterId: 'NewPalFrom2027' }, { characterId: 'AlsoUnknown' }]),
+        storage('b_dps.sav', [{ characterId: 'SheepBall', talents: { hp: 2 }, talentType: 'float' }]),
+      ],
+      byIdLower,
+    )
+
+    expect(result.unknownSpecies).toEqual(['AlsoUnknown', 'NewPalFrom2027'])
+    expect(result.unknownPals).toBe(3)
+    expect(result.oddTypes).toEqual(['Talent_HP (FloatProperty)'])
+    // One sentence each, over the merged totals — not one per file that happened to hit the same thing.
+    expect(result.warnings).toEqual([
+      "left out 3 pals whose species palmatch doesn't know: AlsoUnknown, NewPalFrom2027",
+      "this save stores Talent_HP (FloatProperty) in a form palmatch doesn't recognise, so those IVs were left blank",
+    ])
+  })
+
+  it('degrades a corrupt storage file to a warning and keeps the Level.sav result', async () => {
+    // A `_dps.sav` may be missing, half-written or from a game version we don't know. Losing the
+    // whole import over one would be a bad trade — losing a broken Level.sav is not optional.
+    const result = await parseSaveSet(
+      level([{ characterId: 'SheepBall' }]),
+      [
+        { label: 'broken_dps.sav', buffer: junkFile() },
+        storage('good_dps.sav', [{ characterId: 'CatMage' }]),
+      ],
+      byIdLower,
+    )
+
+    expect(result.owned.map((p) => p.speciesIndex)).toEqual([idx('SheepBall'), idx('CatMage')])
+    expect(result.sources.map((s) => s.label)).toEqual(['Level.sav', 'good_dps.sav'])
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toMatch(/^couldn't read broken_dps\.sav, so any pals kept in it are not counted: /)
+  })
+
+  it('still fails outright when the Level.sav is the broken one', async () => {
+    expect(await codeOf(parseSaveSet(junkFile(), [storage('a_dps.sav', [{}])], byIdLower))).toBe('unknown-magic')
+  })
+
+  it('is exactly parseSave when there are no storage files', async () => {
+    const bytes = levelGvas({ pals: WORLD })
+    expect(await parseSaveSet(plz1(bytes), [], byIdLower)).toEqual(await parseSave(plz1(bytes), byIdLower))
   })
 })
 

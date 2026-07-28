@@ -412,6 +412,82 @@ export function closeCharacterMap(cur: Cursor, map: CharacterMap): void {
   endValue(cur, map.tag)
 }
 
+export interface StorageArray {
+  tag: PropertyTag
+  count: number
+}
+
+/**
+ * The pal storage files' answer to `openCharacterMap`: walks the root property list to
+ * `SaveParameterArray` and stops on its first element, having consumed the array's inner tag.
+ *
+ * `<world>/Players/<uid>_dps.sav` (Dimensional Pal Storage) and `SaveGames/<userid>/
+ * GlobalPalStorage.sav` (the Global Palbox) share this one layout — palcalc reads both with the same
+ * `DimensionalPalStorage_CharacterInstanceVisitor`, constructed with base path `.SaveParameterArray`
+ * (`PC CharacterInstanceVisitor.cs:395`), and says so outright in
+ * `PC GlobalPalStorageSaveFile.cs:19`: "the same format is used for both".
+ *
+ * Three things differ from `Level.sav` and all three are structural, not byte-level:
+ *
+ * 1. `SaveParameterArray` is a **root** property. Palcalc's leading dot is how it spells the root
+ *    property list (`PC GvasFile.cs:110` starts the walk at `""`), against
+ *    `.worldSaveData.CharacterSaveParameterMap` for a level (`:334`).
+ * 2. It is a plain `ArrayProperty<StructProperty>`, so it carries the one array shape that is *not*
+ *    bare (reference §3.5): a full inner tag before `count` bare struct bodies.
+ * 3. Elements hold `SaveParameter` directly — there is no `RawData` indirection. See
+ *    `readCharacterList` in `character.ts`.
+ */
+export function openStorageArray(cur: Cursor, className: string): StorageArray {
+  // Holder object, per the note in `openCharacterMap`.
+  const out: { found: StorageArray | null } = { found: null }
+
+  eachProperty(cur, (tag) => {
+    if (tag.name.toLowerCase() !== 'saveparameterarray') return 'skip'
+    if (tag.type !== 'ArrayProperty' || tag.innerType !== 'StructProperty') {
+      throw new ParseError(
+        'wrong-file',
+        `SaveParameterArray is a ${tag.type} of ${tag.innerType ?? 'nothing'}, expected an ArrayProperty of StructProperty`,
+      )
+    }
+    cur.path = 'SaveParameterArray'
+    const count = cur.u32()
+    // Every element writes at least its own `None` terminator, so this bounds a corrupt count.
+    if (count > cur.remaining) {
+      throw new ParseError('skip-drift', `SaveParameterArray claims ${count} elements with ${cur.remaining} bytes left`)
+    }
+    // The inner tag, in the order of `PST archive.py:637-643` / `PC FArchiveReader.cs:485-496`. The
+    // element property name repeats the array's own; the u64 is the total length of the element
+    // bodies (`PST archive.py:1124-1135` computes it on write) and is read past rather than checked,
+    // since both reference readers discard it and nothing establishes that the game fills it in.
+    cur.fstring()
+    cur.fstring()
+    cur.u64()
+    cur.fstring()
+    cur.skip(16)
+    cur.skip(1)
+    out.found = { tag, count }
+    return 'stop'
+  })
+
+  if (out.found === null) {
+    throw new ParseError(
+      'wrong-file',
+      `no SaveParameterArray in this save (save-game class ${printable(className)}) — Palworld keeps Dimensional Pal Storage in <world>/Players/<id>_dps.sav`,
+    )
+  }
+  return out.found
+}
+
+/**
+ * Closes the walk `openStorageArray` opened. Same end-to-end check as `closeCharacterMap`, and the
+ * same reason for resetting the breadcrumb first: `SaveParameterArray` is a root property, so the
+ * path it should be reported against is the empty one.
+ */
+export function closeStorageArray(cur: Cursor, array: StorageArray): void {
+  cur.path = ''
+  endValue(cur, array.tag)
+}
+
 /**
  * One map entry: the key (a nested property list of GUIDs) is read and dropped, the value is scanned
  * for its `RawData` child. The value list is always read to its terminator even after `RawData` is

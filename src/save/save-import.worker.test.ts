@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadDatasetFromDisk } from '../engine/dataset.ts'
 import { buildLowerLookup } from '../lib/lower-lookup.ts'
-import { cnk0, junkFile, levelGvas, plz1, type PalSpec } from './fixtures/builder.ts'
+import { cnk0, junkFile, levelGvas, plz1, storageGvas, type PalSpec } from './fixtures/builder.ts'
 import type { SaveImportRequest, SaveImportResponse } from './types.ts'
 
 interface FakeScope {
@@ -23,6 +23,10 @@ async function boot(): Promise<(req: SaveImportRequest | undefined) => void> {
 
 function save(pals: PalSpec[]): ArrayBuffer {
   return plz1(levelGvas({ pals }))
+}
+
+function storage(label: string, pals: Array<PalSpec | null>): { label: string; buffer: ArrayBuffer } {
+  return { label, buffer: plz1(storageGvas({ pals })) }
 }
 
 beforeAll(async () => {
@@ -65,6 +69,50 @@ describe('save-import.worker', () => {
     expect(response.result.owned).toEqual([
       { speciesIndex: expect.any(Number), gender: 'F', passives: [], talents: { hp: 90, shot: 0, defense: 0 } },
     ])
+  })
+
+  it('merges a Level.sav and the storage files sent with it into one answer', async () => {
+    const send = await boot()
+
+    send({
+      requestId: 4,
+      buffer: save([{ characterId: 'SheepBall' }, { isPlayer: true, characterId: null }]),
+      storage: [
+        storage('0001_dps.sav', [{ characterId: 'CatMage' }, null]),
+        storage('GlobalPalStorage.sav', [{ characterId: 'LazyDragon' }]),
+      ],
+      byIdLower,
+    })
+
+    // One request, one answer: the extra files do not each get their own reply for the panel to
+    // stitch together.
+    await vi.waitFor(() => expect(posted).toHaveLength(1))
+    const response = posted[0]
+    if (!response.ok) throw new Error(response.detail)
+    expect(response.requestId).toBe(4)
+    expect(response.result.palCount).toBe(3)
+    expect(response.result.playerRows).toBe(1)
+    expect(response.result.vacantSlots).toBe(1)
+    expect(response.result.sources.map((s) => `${s.kind}:${s.label}`)).toEqual([
+      'level:Level.sav',
+      'storage:0001_dps.sav',
+      'storage:GlobalPalStorage.sav',
+    ])
+  })
+
+  it('keeps the import alive when a storage file is the broken one', async () => {
+    const send = await boot()
+
+    send({ requestId: 5, buffer: save([{ characterId: 'SheepBall' }]), storage: [{ label: 'bad_dps.sav', buffer: junkFile() }], byIdLower })
+
+    await vi.waitFor(() => expect(posted).toHaveLength(1))
+    const response = posted[0]
+    // Not a failure: a `_dps.sav` that won't parse is common and costs one file, not the import.
+    expect(response.ok).toBe(true)
+    if (!response.ok) throw new Error(response.detail)
+    expect(response.result.owned).toHaveLength(1)
+    expect(response.result.sources).toHaveLength(1)
+    expect(response.result.warnings[0]).toContain('bad_dps.sav')
   })
 
   it('rebuilds the species lookup from the plain pairs it was sent', async () => {

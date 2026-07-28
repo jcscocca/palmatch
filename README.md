@@ -42,10 +42,14 @@ of fetching the new ones.
 
 ## MY PALS (save import)
 
-MY PALS reads a Palworld `Level.sav` and turns it into an owned-species list the workbench and
-breeding planner use. Drop the file onto the dialog, use BROWSE…, or (Chromium only) FIND MY SAVE
-FOLDER, which walks a folder you pick up to two levels deep looking for `Level.sav`. Parsing runs
-in a Web Worker.
+MY PALS reads a Palworld save and turns it into an owned-species list the workbench and breeding
+planner use. Parsing runs in a Web Worker.
+
+**Pick the folder if you can.** On Chromium, FIND MY SAVE FOLDER walks the folder you pick (up to
+two levels deep) for `Level.sav` and also collects the pal stores that live *outside* it — see
+below. Drag-and-drop and BROWSE… work everywhere and accept several files at once, so you can
+shift-select `Level.sav` together with the `_dps.sav` files. A lone `Level.sav` still imports fine;
+the panel just says that's all it read.
 
 **The save is never uploaded anywhere — palmatch has no server, it's a static site, and the file
 never leaves the browser tab.** The owned list is kept in `localStorage`
@@ -56,6 +60,25 @@ never leaves the browser tab.** The owned list is kept in `localStorage`
 - Windows: `%LOCALAPPDATA%\Pal\Saved\SaveGames\<steam-id>\<world-id>\Level.sav`
 - Dedicated server: `Pal/Saved/SaveGames/0/<world-id>/Level.sav`
 - Steam Deck / Linux (Proton): `~/.steam/steam/steamapps/compatdata/1623730/pfx/drive_c/users/steamuser/AppData/Local/Pal/Saved/SaveGames/`
+
+**Pals that aren't in `Level.sav`**
+
+`Level.sav` holds parties, palboxes and base pals. Palworld keeps two more pal stores in separate
+files, and palmatch reads both when it can reach them:
+
+| file | where | what's in it |
+| --- | --- | --- |
+| `<player-id>_dps.sav` | `<world-id>/Players/` — one per player | Dimensional Pal Storage, ~9,600 slots. Where duplicate catches, breeding leftovers and condensation stock get dumped. |
+| `GlobalPalStorage.sav` | `SaveGames/<user-id>/` — *beside* the world folders, one level above | The account-wide Global Palbox. Low volume, filled one pal at a time, but often prized specimens. |
+
+Both files only exist once you've used the feature, so **most saves have neither and that is
+normal** — nothing is reported when a walked folder holds none. Because `GlobalPalStorage.sav` sits
+above the world folder, only FIND MY SAVE FOLDER (pointed at `SaveGames` or your user-id folder)
+reaches it. The other `.sav` files in `Players/` are player profiles and hold no pals.
+
+The summary line says what was read — `from Level.sav · 2 storage files` when there were any. A
+storage file that won't parse is reported as a warning and the rest of the import still lands; only
+a broken `Level.sav` fails the import outright.
 
 **Share links & `.palmatch.json`**
 
@@ -84,6 +107,8 @@ rejected with a clear message. Only Steam/PC saves, and dedicated server saves, 
 | "that import did not finish within 60 seconds — try again, or with a smaller world" | worker timeout | retry; if it recurs, file an issue with the detail line shown |
 | "that shared list is damaged or too old to read — ask for a fresh one" | share link/file failed to decode | ask the sender for a fresh one |
 | "no Level.sav in that folder — pick the SaveGames folder, or a world folder inside it" | nothing found in the 2-level walk | pick a folder closer to `Level.sav` |
+| "couldn't read `<file>`, so any pals kept in it are not counted: …" | a `_dps.sav` / `GlobalPalStorage.sav` failed to parse; the `Level.sav` import still succeeded | copy the folder again with the game closed; if it recurs, file an issue with the detail line shown |
+| a pal you own is missing from the list | it's in Dimensional Pal Storage or the Global Palbox, and only `Level.sav` was read | use FIND MY SAVE FOLDER, or select the `_dps.sav` files alongside `Level.sav` |
 
 ## Deploy
 

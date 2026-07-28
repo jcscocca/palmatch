@@ -53,23 +53,46 @@ export interface OwnedPal {
 }
 
 /**
+ * One file that contributed rows to an import. `Level.sav` is always the first; the rest are pal
+ * *storage* files — a player's Dimensional Pal Storage (`<world>/Players/<uid>_dps.sav`) or the
+ * account-wide Global Palbox (`SaveGames/<userid>/GlobalPalStorage.sav`) — which hold pals that are
+ * in no palbox, party or base and so appear nowhere in `Level.sav`.
+ *
+ * Only files that were actually read are listed. A storage file that failed is a warning instead,
+ * because a missing or half-written `_dps.sav` must not cost the player their whole import.
+ */
+export interface ImportSource {
+  label: string
+  kind: 'level' | 'storage'
+  /** Pal rows this file contributed, before species resolution. */
+  palCount: number
+}
+
+/**
  * `palCount` counts pal rows found in the save, `owned` only those whose species we could resolve —
  * the difference is `unknownPals`, spread over the `unknownSpecies` (raw `CharacterID`s, deduped
  * and sorted) that produced them, which is expected to be non-empty for bosses, humans and pals
  * newer than our dataset.
  *
- * Every other row in the character map is one of two different things, and the summary can only be
- * honest if they stay apart: `playerRows` are rows flagged `IsPlayer` — the humans, one per member
- * of a guild world — while `unreadableRows` are rows we could not interpret at all (no
- * `CharacterID`, or no `RawData` to read one from), which on a healthy save is zero.
- * `palCount + playerRows + unreadableRows` is every row the map declared.
+ * Every other row is one of three different things, and the summary can only be honest if they stay
+ * apart: `playerRows` are rows flagged `IsPlayer` — the humans, one per member of a guild world —
+ * `vacantSlots` are empty slots in a pal storage file, which are recycled in place rather than
+ * removed and so make up almost all of a ~9,600-slot Dimensional Pal Storage, and `unreadableRows`
+ * are rows we could not interpret at all (no `CharacterID`, or no `RawData` to read one from),
+ * which on a healthy save is zero. `palCount + playerRows + vacantSlots + unreadableRows` is every
+ * row the sources declared between them.
  *
  * `warnings` is the parser's channel for "this worked, but you should know", each a finished
  * sentence for the panel to show. `unknownSpecies`, `unknownPals` and `oddTypes` are the same facts
  * structured: the prose is a convenience, the fields are what anything but a `<p>` should read.
+ *
+ * Every tally is the sum over `sources`. A single-file import has one source and reads exactly as
+ * it always did.
  */
 export interface ImportResult {
   owned: OwnedPal[]
+  /** The files behind these numbers, `Level.sav` first. Never empty. */
+  sources: ImportSource[]
   unknownSpecies: string[]
   /** Pal rows dropped because their species is not in this build's paldex. */
   unknownPals: number
@@ -77,19 +100,32 @@ export interface ImportResult {
   oddTypes: string[]
   playerRows: number
   unreadableRows: number
+  /** Empty pal-storage slots. Always 0 for a lone `Level.sav`, which has no such thing. */
+  vacantSlots: number
   palCount: number
   warnings: string[]
 }
 
+/** A pal storage file to merge into the import, with the name the panel will blame if it fails. */
+export interface StorageInput {
+  label: string
+  buffer: ArrayBuffer
+}
+
 /**
- * `buffer` is transferred, not copied, so the caller's view is neutered once this is posted.
- * `byIdLower` arrives as entry pairs rather than a `Map` purely to keep the message plain JSON —
- * the dataset lives on the main thread and the worker never loads it.
+ * `buffer` is transferred, not copied, so the caller's view is neutered once this is posted — as is
+ * every `storage` buffer beside it. `byIdLower` arrives as entry pairs rather than a `Map` purely to
+ * keep the message plain JSON — the dataset lives on the main thread and the worker never loads it.
+ *
+ * `buffer` is the `Level.sav`, and it alone is allowed to sink the import: `storage` files are
+ * optional extras whose absence is the normal case, so one that won't parse becomes a warning.
  */
 export interface SaveImportRequest {
   requestId: number
   buffer: ArrayBuffer
   byIdLower: Array<[string, number]>
+  /** Absent and empty mean the same thing: a lone `Level.sav`. */
+  storage?: StorageInput[]
 }
 
 export type SaveImportResponse =
