@@ -1,8 +1,9 @@
 import { useEffect, useMemo } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
+import { ownedCount, useOwnedStore } from '../../state/owned.ts'
 import { modeFor, useWorkbenchStore } from '../../state/store.ts'
 import { useDataset } from '../dataset-context.ts'
-import { MODE_TABS, TAB_LABELS, activeTabFor } from '../tabs.ts'
+import { TAB_LABELS, activeTabFor, tabsFor } from '../tabs.ts'
 import { ChainView } from './ChainView.tsx'
 import { ChildCard } from './ChildCard.tsx'
 import { ComboTable } from './ComboTable.tsx'
@@ -14,6 +15,9 @@ import { comboRowsFor, parentRowsFor } from './combo-rows.ts'
 const PANEL_ID = 'result-panel'
 /** A handful of pals have >1000 parent pairs; the filter is how you get at the rest. */
 const COMBO_CAP = 300
+/** One string each, rather than a sentence assembled from JSX: the hint is read as a whole. */
+const EMPTY_HINT = 'pick pals to begin — fill PARENT A, PARENT B, or TARGET above, or press / to search'
+const OWNED_HINT = `${EMPTY_HINT} — or set a TARGET alone and chain from the pals you own`
 
 /**
  * The result area: the per-mode tab strip plus whichever panel it selects. Arrow keys move between
@@ -27,10 +31,13 @@ export function ResultTabs() {
   const target = useWorkbenchStore((s) => s.target)
   const tab = useWorkbenchStore((s) => s.tab)
   const setTab = useWorkbenchStore((s) => s.setTab)
+  const bySpecies = useOwnedStore((s) => s.bySpecies)
 
+  const hasOwned = useMemo(() => ownedCount(bySpecies) > 0, [bySpecies])
   const mode = modeFor({ slotA, slotB, target })
-  const tabs = MODE_TABS[mode]
-  const activeTab = activeTabFor(mode, tab)
+  // Memoized because the owned case builds a fresh array, which the effect below depends on.
+  const tabs = useMemo(() => tabsFor(mode, hasOwned), [hasOwned, mode])
+  const activeTab = activeTabFor(mode, tab, hasOwned)
 
   // A tab id can arrive from a shared link that doesn't belong to the current mode. `activeTabFor`
   // already falls back for rendering; writing the fallback back into the store keeps the URL from
@@ -77,7 +84,7 @@ export function ResultTabs() {
   const body = ((): ReactNode => {
     switch (activeTab) {
       case null:
-        return <p className="panel-note">pick pals to begin — fill PARENT A, PARENT B, or TARGET above, or press / to search</p>
+        return <p className="panel-note">{hasOwned ? OWNED_HINT : EMPTY_HINT}</p>
       case 'child':
         return pair === null ? null : <ChildCard a={pair.a} b={pair.b} />
       case 'mutations':

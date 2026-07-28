@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChainRequest, ChainResponse, ChainStep } from '../../engine/types.ts'
+import { ownedSpeciesIndices, useOwnedStore } from '../../state/owned.ts'
 import { useWorkbenchStore } from '../../state/store.ts'
 import { useDataset } from '../dataset-context.ts'
 import { PalTile } from '../PalTile.tsx'
@@ -11,6 +12,8 @@ const TIMEOUT_MS = 5000
 
 type ChainState =
   | { status: 'loading' }
+  /** Reachable one way only: MY PALS switched off with no parent slot filled. */
+  | { status: 'no-starters' }
   | { status: 'done'; steps: ChainStep[] | null; depth: number; strict: boolean }
   | { status: 'error'; message: string }
 
@@ -41,12 +44,36 @@ export function ChainView() {
   const depth = useWorkbenchStore((s) => s.chainDepth)
   const setChainDepth = useWorkbenchStore((s) => s.setChainDepth)
   const setSlot = useWorkbenchStore((s) => s.setSlot)
+  const bySpecies = useOwnedStore((s) => s.bySpecies)
 
   const workerRef = useRef<Worker | null>(null)
   const inFlightRef = useRef<InFlight>({ id: 0, depth, strict: false, expired: true })
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<ChainState>({ status: 'loading' })
+  /** `null` until the player touches the toggle; their click then wins for the session. */
+  const [ownedPref, setOwnedPref] = useState<boolean | null>(null)
+
+  // A stored list can outlive the paldex it was made against — an old localStorage entry, a shared
+  // link from a newer build — and a starter this dataset doesn't have is one no step could render.
+  const ownedIndices = useMemo(
+    () => ownedSpeciesIndices(bySpecies).filter((index) => ds.pals[index] !== undefined),
+    [bySpecies, ds],
+  )
+  const ownedSet = useMemo(() => new Set(ownedIndices), [ownedIndices])
+  const hasOwned = ownedIndices.length > 0
+  /**
+   * Off by default once a parent slot is filled by hand — picking a starter means "chain from this
+   * one" — and on otherwise, which is the only reason CHAINS is offered without a starter at all.
+   * Session-local rather than stored: a toggle in the workbench URL would follow a shared link to
+   * someone whose palbox is empty and quietly plan chains from pals they don't have.
+   */
+  const ownedOn = hasOwned && (ownedPref ?? slotA === null)
+
+  const starters = useMemo(() => {
+    const manual = [slotA, slotB].filter((slot) => slot !== null)
+    return ownedOn ? [...new Set([...ownedIndices, ...manual])] : manual
+  }, [ownedIndices, ownedOn, slotA, slotB])
 
   const clearTimer = useCallback((): void => {
     if (timerRef.current === null) return
@@ -84,8 +111,15 @@ export function ChainView() {
   }, [attempt, clearTimer])
 
   useEffect(() => {
-    if (slotA === null || target === null) return
-    const starters = slotB === null ? [slotA] : [slotA, slotB]
+    if (target === null) return
+    if (starters.length === 0) {
+      // MY PALS switched off with no slot filled. Expire whatever is in flight: its answer belongs
+      // to a question the screen has stopped asking.
+      inFlightRef.current = { ...inFlightRef.current, expired: true }
+      clearTimer()
+      setState({ status: 'no-starters' })
+      return
+    }
     const strict = starters.length > 1
     // Expire *here*, not in the debounce callback below: for the next 150ms the screen is already
     // showing the new slots, so an answer to the question the old ones asked must not land.
@@ -114,12 +148,20 @@ export function ChainView() {
       clearTimeout(debounce)
       clearTimer()
     }
-  }, [attempt, clearTimer, depth, slotA, slotB, target])
+  }, [attempt, clearTimer, depth, starters, target])
 
-  if (slotA === null || target === null) return <p className="panel-note">pick a starter and a target to plan a chain</p>
+  if (target === null) return <p className="panel-note">pick a starter and a target to plan a chain</p>
 
-  const strictNow = slotB !== null
-  const tile = (index: number) => <PalTile pal={ds.pals[index]} size="sm" onPromote={(slot) => setSlot(slot, index)} />
+  const strictNow = starters.length > 1
+  // What the search is actually running on, in the words of whichever thing filled the starters.
+  const modeNote = ownedOn
+    ? `${ownedIndices.length} owned species as starters${strictNow ? '' : ' — free partners'}`
+    : strictNow
+      ? 'strict — only the two pals you picked'
+      : 'free partners — catch whatever a step needs'
+  const tile = (index: number) => (
+    <PalTile pal={ds.pals[index]} size="sm" owned={ownedSet.has(index)} onPromote={(slot) => setSlot(slot, index)} />
+  )
 
   return (
     <div className="chain-view">
@@ -139,10 +181,23 @@ export function ChainView() {
             </option>
           ))}
         </select>
-        <span className="chain-mode">
-          {strictNow ? 'strict — only the two pals you picked' : 'free partners — catch whatever a step needs'}
-        </span>
+        {hasOwned && (
+          <button
+            type="button"
+            className={`chip-text${ownedOn ? ' chip-on' : ''}`}
+            aria-pressed={ownedOn}
+            title="plan chains from the pals you imported"
+            onClick={() => setOwnedPref(!ownedOn)}
+          >
+            USE MY PALS
+          </button>
+        )}
+        <span className="chain-mode">{modeNote}</span>
       </div>
+
+      {state.status === 'no-starters' && (
+        <p className="panel-note">nothing to chain from — turn USE MY PALS back on, or pick a parent</p>
+      )}
 
       {state.status === 'loading' && (
         <div className="chain-loading">

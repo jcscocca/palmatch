@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { loadDatasetFromDisk } from '../../engine/dataset.ts'
 import type { Dataset } from '../../engine/types.ts'
+import { useOwnedStore } from '../../state/owned.ts'
 import { useWorkbenchStore } from '../../state/store.ts'
 import { DatasetContext } from '../dataset-context.ts'
 import { ComboTable } from './ComboTable.tsx'
@@ -22,9 +23,25 @@ beforeAll(async () => {
 
 beforeEach(() => {
   useWorkbenchStore.getState().clearAll()
+  useOwnedStore.getState().clearOwned()
 })
 
 afterEach(cleanup)
+
+/** Only species reach the table — counts are the import panel's business. */
+function own(...names: string[]): Set<number> {
+  const indices = names.map(idx)
+  useOwnedStore.getState().loadShared(indices.map((index) => [index, 1]))
+  return new Set(indices)
+}
+
+/** The names carrying an owned tick inside one row, so the assertion names tiles, not counts. */
+function tickedNames(row: HTMLElement): string[] {
+  return within(row)
+    .getAllByLabelText('owned')
+    .map((tick) => tick.closest('.pal-tile')?.querySelector('.pal-name')?.textContent ?? '')
+    .sort()
+}
 
 function show(rows: ComboRow[], cap?: number) {
   render(
@@ -121,6 +138,57 @@ describe('ComboTable', () => {
 
     expect(bodyRows()).toHaveLength(10)
     expect(screen.getByText(`…${rows.length - 10} more pairs not shown — narrow with the filter`)).toBeTruthy()
+  })
+
+  it('offers no OWNED ONLY chip to a player who has imported nothing', () => {
+    show(comboRowsFor(ds, idx('Lamball')))
+    expect(screen.queryByText('OWNED ONLY')).toBeNull()
+    expect(screen.queryAllByLabelText('owned')).toHaveLength(0)
+  })
+
+  it('narrows to pairs whose parents are both owned, and composes with the name filter', () => {
+    const owned = own('Lamball', 'Foxparks', 'Chikipi')
+    const rows = comboRowsFor(ds, idx('Lamball'))
+    show(rows)
+
+    // Off by default: the chip is an opt-in, so an import never silently hides most of the table.
+    expect(bodyRows()).toHaveLength(rows.length)
+    fireEvent.click(screen.getByText('OWNED ONLY'))
+
+    const both = rows.filter((r) => owned.has(r.a) && owned.has(r.b))
+    expect(both.length).toBeGreaterThan(1)
+    expect(bodyRows()).toHaveLength(both.length)
+    expect(screen.getByText(`${both.length} combos of ${rows.length}`)).toBeTruthy()
+
+    // Foxparks Cryst matches the name filter and is not owned, so the two filters intersect
+    // rather than either one winning.
+    fireEvent.change(screen.getByLabelText('filter combos by pal name'), { target: { value: 'foxparks' } })
+    const narrowed = bodyRows()
+    expect(narrowed).toHaveLength(1)
+    expect(narrowed[0].textContent).toContain('Foxparks')
+    expect(narrowed[0].textContent).not.toContain('Foxparks Cryst')
+  })
+
+  it('counts the owned-only rows the cap hides, not the whole table', () => {
+    const owned = own('Lamball', 'Foxparks', 'Chikipi')
+    const rows = comboRowsFor(ds, idx('Lamball'))
+    const both = rows.filter((r) => owned.has(r.a) && owned.has(r.b))
+    show(rows, 1)
+
+    fireEvent.click(screen.getByText('OWNED ONLY'))
+    expect(bodyRows()).toHaveLength(1)
+    expect(screen.getByText(`…${both.length - 1} more pairs not shown — narrow with the filter`)).toBeTruthy()
+  })
+
+  it('ticks exactly the cells the player owns, child included', () => {
+    own('Lamball', 'Foxparks Cryst')
+    show(comboRowsFor(ds, idx('Lamball')))
+
+    fireEvent.change(screen.getByLabelText('filter combos by pal name'), { target: { value: 'foxparks cryst' } })
+    const rows = bodyRows()
+    expect(rows).toHaveLength(1)
+    // Both parents carry a tick; the child of the pair is some third pal nobody owns.
+    expect(tickedNames(rows[0])).toEqual(['Foxparks Cryst', 'Lamball'])
   })
 
   it('spells out the gender requirement on a gender-locked row', () => {

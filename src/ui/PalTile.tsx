@@ -8,6 +8,11 @@ export interface PalTileProps {
   size: 'sm' | 'md' | 'lg'
   /** When given, the tile grows a hover/focus action strip that sends this pal to a slot. */
   onPromote?: (slot: 'a' | 'b' | 't') => void
+  /**
+   * Marks a pal the player owns. Passed only by the panels that already read the owned list once
+   * for their own filtering, so 900 tiles don't each subscribe to the store to learn one bit.
+   */
+  owned?: boolean
 }
 
 const PROMOTE_ACTIONS: Array<{ slot: 'a' | 'b' | 't'; glyph: string; label: string }> = [
@@ -26,7 +31,7 @@ const PROMOTE_ACTIONS: Array<{ slot: 'a' | 'b' | 't'; glyph: string; label: stri
  * The promote buttons are the tile's only interactive parts, which is why every clickable
  * container this sits inside is a `role="button"`/`role="option"` element and never a `<button>`.
  */
-export function PalTile({ pal, size, onPromote }: PalTileProps) {
+export function PalTile({ pal, size, onPromote, owned }: PalTileProps) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
   const failed = failedSrc === pal.sprite
 
@@ -45,6 +50,11 @@ export function PalTile({ pal, size, onPromote }: PalTileProps) {
             loading="lazy"
             onError={() => setFailedSrc(pal.sprite)}
           />
+        )}
+        {owned === true && (
+          <span className="owned-tick" role="img" aria-label="owned" title="in your palbox">
+            ✓
+          </span>
         )}
       </div>
 

@@ -1,8 +1,9 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { findParents } from '../../engine/breed.ts'
 import { loadDatasetFromDisk } from '../../engine/dataset.ts'
 import type { Dataset } from '../../engine/types.ts'
+import { useOwnedStore } from '../../state/owned.ts'
 import { useWorkbenchStore } from '../../state/store.ts'
 import { DatasetContext } from '../dataset-context.ts'
 import { ResultTabs } from './ResultTabs.tsx'
@@ -21,9 +22,25 @@ beforeAll(async () => {
 
 beforeEach(() => {
   useWorkbenchStore.getState().clearAll()
+  useOwnedStore.getState().clearOwned()
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
+
+/** ChainView builds a real module worker when it mounts, which jsdom has no answer for. */
+class SilentWorker {
+  onmessage: unknown = null
+  onerror: unknown = null
+  postMessage(): void {}
+  terminate(): void {}
+}
+
+function own(...names: string[]): void {
+  useOwnedStore.getState().loadShared(names.map((name) => [idx(name), 1]))
+}
 
 function show() {
   render(
@@ -112,6 +129,57 @@ describe('ResultTabs', () => {
     show()
     expect(screen.queryAllByRole('tab')).toHaveLength(0)
     expect(screen.getByText(/pick pals to begin/)).toBeTruthy()
+  })
+
+  it('adds a CHAINS tab to target mode only for a player who owns pals', () => {
+    const target = idx('Relaxaurus Lux')
+    useWorkbenchStore.getState().setSlot('t', target)
+    show()
+    expect(screen.queryByRole('tab', { name: 'CHAINS' })).toBeNull()
+
+    // The owned list is what makes a chain answerable without a starter slot, so the tab it earns
+    // appears without the workbench mode changing at all.
+    cleanup()
+    own('Lamball', 'Chikipi')
+    show()
+
+    const tabs = screen.getAllByRole('tab').map((t) => t.textContent)
+    expect(tabs[tabs.length - 1]).toBe('CHAINS')
+    // Appended, not promoted: the tab the mode already opened on stays the default.
+    const count = findParents(ds, target).length
+    expect(screen.getByRole('tab', { name: `PARENT COMBOS (${count})` }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('opens the owned chains panel from that tab', () => {
+    vi.stubGlobal('Worker', SilentWorker)
+    own('Lamball', 'Chikipi')
+    useWorkbenchStore.getState().setSlot('t', idx('Relaxaurus Lux'))
+    show()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'CHAINS' }))
+    expect(useWorkbenchStore.getState().tab).toBe('chains')
+    expect(screen.getByText('2 owned species as starters')).toBeTruthy()
+  })
+
+  it('drops a shared chains tab when the recipient owns nothing', () => {
+    useWorkbenchStore.getState().setSlot('t', idx('Relaxaurus Lux'))
+    // What `#/t/relaxaurus_lux@chains` decodes to: a tab the sharer's palbox earned and this
+    // browser's cannot show.
+    useWorkbenchStore.setState({ tab: 'chains' })
+    show()
+
+    expect(useWorkbenchStore.getState().tab).toBe(null)
+    expect(screen.getByRole('tab', { name: /PARENT COMBOS/ }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('points an empty workbench at the owned list, and only then', () => {
+    show()
+    expect(screen.queryByText(/pals you own/)).toBeNull()
+
+    cleanup()
+    own('Lamball')
+    show()
+    expect(screen.getByText(/pick pals to begin.*chain from the pals you own/)).toBeTruthy()
   })
 
   it('drops a tab id that does not belong to the current mode', () => {

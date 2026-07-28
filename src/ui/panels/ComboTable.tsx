@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ComboBadge, Dataset, PalRecord } from '../../engine/types.ts'
+import { ownedSpeciesIndices, useOwnedStore } from '../../state/owned.ts'
 import { useWorkbenchStore } from '../../state/store.ts'
 import { useDataset } from '../dataset-context.ts'
 import { PalTile } from '../PalTile.tsx'
@@ -48,15 +49,32 @@ function rowMatches(ds: Dataset, row: ComboRow, showChild: boolean, query: strin
 export function ComboTable({ rows, cap }: ComboTableProps) {
   const ds = useDataset()
   const setSlot = useWorkbenchStore((s) => s.setSlot)
+  const bySpecies = useOwnedStore((s) => s.bySpecies)
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<string[]>([])
+  const [ownedPref, setOwnedPref] = useState(false)
+
+  // Read once per table rather than per tile: a capped table is 300 rows x 3 tiles, and each of
+  // those subscribing to the store for one boolean is 900 subscriptions to answer 900 set lookups.
+  // A species is only in the store because at least one pal of it was imported, so a non-empty set
+  // is exactly "owns something".
+  const owned = useMemo(() => new Set(ownedSpeciesIndices(bySpecies)), [bySpecies])
+  const hasOwned = owned.size > 0
+  // Clearing the list mid-session takes the chip away with it; without this the table would keep
+  // filtering against an empty set and show nothing, with no control left to explain why.
+  const ownedOnly = ownedPref && hasOwned
 
   const showChild = rows.some((r) => r.child !== undefined)
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (q === '' && typeFilter.length === 0) return rows
-    return rows.filter((r) => rowMatches(ds, r, showChild, q, typeFilter))
-  }, [ds, query, rows, showChild, typeFilter])
+    if (q === '' && typeFilter.length === 0 && !ownedOnly) return rows
+    // Both filters must hold: OWNED ONLY asks about the pair, the name/type filter asks about any
+    // visible cell, and a row has to answer both. The child is deliberately not part of the owned
+    // test — the point of the chip is "pairs I can breed right now", which the child never is.
+    return rows.filter(
+      (r) => (!ownedOnly || (owned.has(r.a) && owned.has(r.b))) && rowMatches(ds, r, showChild, q, typeFilter),
+    )
+  }, [ds, owned, ownedOnly, query, rows, showChild, typeFilter])
 
   const shown = cap === undefined ? filtered : filtered.slice(0, cap)
   const hidden = filtered.length - shown.length
@@ -66,7 +84,7 @@ export function ComboTable({ rows, cap }: ComboTableProps) {
   }
 
   const cell = (index: number) => (
-    <PalTile pal={ds.pals[index]} size="sm" onPromote={(slot) => setSlot(slot, index)} />
+    <PalTile pal={ds.pals[index]} size="sm" owned={owned.has(index)} onPromote={(slot) => setSlot(slot, index)} />
   )
 
   return (
@@ -81,6 +99,17 @@ export function ComboTable({ rows, cap }: ComboTableProps) {
           onChange={(e) => setQuery(e.target.value)}
         />
         <TypeChips selected={typeFilter} onToggle={toggleType} />
+        {hasOwned && (
+          <button
+            type="button"
+            className={`chip-text${ownedOnly ? ' chip-on' : ''}`}
+            aria-pressed={ownedOnly}
+            title="only pairs where you own both parents"
+            onClick={() => setOwnedPref((on) => !on)}
+          >
+            OWNED ONLY
+          </button>
+        )}
       </div>
 
       <p className="count-line">
