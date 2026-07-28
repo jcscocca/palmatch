@@ -326,6 +326,10 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
   const applyShare = useCallback(
     (species: SharedSpecies[], dropped: number, label: string): void => {
       abortInFlight()
+      // Claim the panel the same way `ingest` does: a save whose `arrayBuffer()` is still in flight
+      // has no worker for `abortInFlight` to kill, so only a generation bump stops its continuation
+      // from parsing over the list the player just chose here.
+      ingestRef.current++
       if (species.length === 0) {
         setState({ status: 'error', code: 'bad-share', detail: 'none of its species exist in this paldex', label })
         return

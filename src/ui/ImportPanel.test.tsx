@@ -631,6 +631,29 @@ describe('ImportPanel', () => {
       expect(useOwnedStore.getState().bySpecies).toEqual({ 1: { count: 1, individuals: [] } })
     })
 
+    it('discards a save whose read finishes after LOAD chose a shared list', async () => {
+      // Same window as the drop-a-list-mid-read case, reached through the confirm step instead: a
+      // save dropped while the codec chunk is still resolving has no worker yet, so only a
+      // generation bump stops its continuation from parsing over the list LOAD just installed.
+      const slow = saveFile('big.sav')
+      let releaseRead: (buffer: ArrayBuffer) => void = () => undefined
+      vi.spyOn(slow, 'arrayBuffer').mockReturnValue(
+        new Promise<ArrayBuffer>((resolve) => {
+          releaseRead = resolve
+        }),
+      )
+
+      show({ shareBlob: encodeOwnedShare(shared) })
+      drop(slow)
+      await screen.findByText('LOAD')
+      fireEvent.click(screen.getByText('LOAD'))
+
+      releaseRead(saveBytes().buffer as ArrayBuffer)
+      await waitFor(() => expect(screen.getByText(/2 species · 6 pals/)).toBeTruthy())
+      expect(workers).toHaveLength(0)
+      expect(useOwnedStore.getState().sourceLabel).toBe('shared list')
+    })
+
     it('LOAD installs exactly what the confirm step offered, without going near the parser', async () => {
       useOwnedStore.getState().loadShared([[1, 1]], 'mine')
       show({ shareBlob: encodeOwnedShare(shared) })
