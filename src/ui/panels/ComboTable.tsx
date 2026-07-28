@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ComboBadge, Dataset, PalRecord } from '../../engine/types.ts'
-import { ownedSpeciesIndices, useOwnedStore } from '../../state/owned.ts'
+import { hasOwnedFor, ownedSpeciesIndices, useOwnedStore } from '../../state/owned.ts'
 import { useWorkbenchStore } from '../../state/store.ts'
 import { useDataset } from '../dataset-context.ts'
 import { PalTile } from '../PalTile.tsx'
@@ -56,10 +56,8 @@ export function ComboTable({ rows, cap }: ComboTableProps) {
 
   // Read once per table rather than per tile: a capped table is 300 rows x 3 tiles, and each of
   // those subscribing to the store for one boolean is 900 subscriptions to answer 900 set lookups.
-  // A species is only in the store because at least one pal of it was imported, so a non-empty set
-  // is exactly "owns something".
   const owned = useMemo(() => new Set(ownedSpeciesIndices(bySpecies)), [bySpecies])
-  const hasOwned = owned.size > 0
+  const hasOwned = hasOwnedFor(bySpecies, ds.pals.length)
   // Clearing the list mid-session takes the chip away with it; without this the table would keep
   // filtering against an empty set and show nothing, with no control left to explain why.
   const ownedOnly = ownedPref && hasOwned

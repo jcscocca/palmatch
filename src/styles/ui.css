@@ -928,20 +928,16 @@ button {
 /* ---- import panel (MY PALS) ---- */
 
 /*
- * Shares `.palette-dialog` for the modal shell (fixed overlay + backdrop) and only differs in the
- * box: wider than the search palette, because the species grid needs the room.
+ * Shares `.palette-dialog` for the modal shell (fixed overlay + backdrop) and `.palette` for the box
+ * itself — the panel carries both classes, so the border, surface and shadow are defined once and
+ * the two dialogs cannot drift apart. Only the size differs: wider and taller than the search
+ * palette, because the species grid needs the room, and scrolling inside the box rather than the
+ * dialog so the head stays put.
  */
 .import-panel {
-  display: flex;
-  flex-direction: column;
   gap: 12px;
-  width: 100%;
   max-width: 680px;
   max-height: 84vh;
-  padding: 12px;
-  border: 2px solid var(--accent);
-  background: var(--surface);
-  box-shadow: 6px 6px 0 #000;
   overflow-y: auto;
 }
 
@@ -1008,7 +1004,12 @@ button {
   cursor: pointer;
 }
 
-.file-btn:hover {
+/*
+ * `:focus-within` covers BROWSE…, whose real control is the visually-hidden file input nested
+ * inside the label: the focus ring lands on an off-screen element, so the label has to show it.
+ */
+.file-btn:hover,
+.file-btn:focus-within {
   border-color: var(--accent);
   color: var(--accent);
 }

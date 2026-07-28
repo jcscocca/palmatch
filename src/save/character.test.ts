@@ -1,17 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readCharacterFields, resolveSpecies } from './character.ts'
 import { characterRawData, fromHex, toHex } from './fixtures/builder.ts'
-import { ParseError } from './types.ts'
-
-function codeOf(fn: () => unknown): string {
-  try {
-    fn()
-  } catch (error) {
-    if (error instanceof ParseError) return error.code
-    throw error
-  }
-  throw new Error('expected a ParseError')
-}
+import { codeOfSync as codeOf } from './test-utils.ts'
 
 /**
  * A `RawData` blob written out by hand from reference §3.3 and §4.2 — not by our builder. It is the

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { build, cnk0, junkFile, levelGvas, plm1, plz1, plz2, truncateTo } from './fixtures/builder.ts'
 import type { OozDecompress } from './ooz.ts'
+import { codeOf, detailOf } from './test-utils.ts'
 import { ParseError } from './types.ts'
 import { decompressSave, MAX_DECOMPRESSED_BYTES, sniffWrapper } from './wrapper.ts'
 
@@ -9,26 +10,6 @@ function patchU32(buffer: ArrayBuffer, offset: number, value: number): ArrayBuff
   const copy = buffer.slice(0)
   new DataView(copy).setUint32(offset, value, true)
   return copy
-}
-
-async function detailOf(promise: Promise<unknown>): Promise<string> {
-  try {
-    await promise
-  } catch (error) {
-    if (error instanceof ParseError) return error.message
-    throw error
-  }
-  throw new Error('expected a ParseError, got a successful parse')
-}
-
-async function codeOf(promise: Promise<unknown>): Promise<string> {
-  try {
-    await promise
-  } catch (error) {
-    if (error instanceof ParseError) return error.code
-    throw error
-  }
-  throw new Error('expected a ParseError, got a successful parse')
 }
 
 const gvas = levelGvas({ pals: [{}] })

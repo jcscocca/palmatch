@@ -54,20 +54,29 @@ export interface OwnedPal {
 
 /**
  * `palCount` counts pal rows found in the save, `owned` only those whose species we could resolve —
- * the difference is `unknownSpecies` (raw `CharacterID`s, deduped and sorted), which is expected to
- * be non-empty for bosses, humans and pals newer than our dataset.
+ * the difference is `unknownPals`, spread over the `unknownSpecies` (raw `CharacterID`s, deduped
+ * and sorted) that produced them, which is expected to be non-empty for bosses, humans and pals
+ * newer than our dataset.
  *
- * `nonPalRows` is every other row in the character map: the player themselves, plus anything with
- * no usable `CharacterID`. It is deliberately not called a player count — one save can hold several
- * players and an unknown number of non-player oddities, and the UI must not claim otherwise.
+ * Every other row in the character map is one of two different things, and the summary can only be
+ * honest if they stay apart: `playerRows` are rows flagged `IsPlayer` — the humans, one per member
+ * of a guild world — while `unreadableRows` are rows we could not interpret at all (no
+ * `CharacterID`, or no `RawData` to read one from), which on a healthy save is zero.
+ * `palCount + playerRows + unreadableRows` is every row the map declared.
  *
- * `warnings` is the parser's channel for "this worked, but you should know": species we skipped,
- * fields stored in a shape we didn't expect. Each is a finished sentence for the panel to show.
+ * `warnings` is the parser's channel for "this worked, but you should know", each a finished
+ * sentence for the panel to show. `unknownSpecies`, `unknownPals` and `oddTypes` are the same facts
+ * structured: the prose is a convenience, the fields are what anything but a `<p>` should read.
  */
 export interface ImportResult {
   owned: OwnedPal[]
   unknownSpecies: string[]
-  nonPalRows: number
+  /** Pal rows dropped because their species is not in this build's paldex. */
+  unknownPals: number
+  /** `Talent_HP (FloatProperty)`-style names of fields present in a shape we don't read. */
+  oddTypes: string[]
+  playerRows: number
+  unreadableRows: number
   palCount: number
   warnings: string[]
 }

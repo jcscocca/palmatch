@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import type { PalRecord } from '../engine/types.ts'
 import type { OwnedBySpecies } from '../state/owned.ts'
-import { ownedCount, ownedSpeciesIndices } from '../state/owned.ts'
+import { ownedRows } from '../state/owned.ts'
 import { PalTile } from './PalTile.tsx'
 
 export interface OwnedSummaryProps {
@@ -9,6 +9,8 @@ export interface OwnedSummaryProps {
   bySpecies: OwnedBySpecies
   warnings: string[]
   sourceLabel: string | null
+  /** Players in the save this list came from; 0 for a shared list, which carries no such count. */
+  playerRows: number
   /** Inline confirmation for SHARE / DOWNLOAD — announced politely, not as a toast over the dialog. */
   note: string | null
   onImportAgain: () => void
@@ -31,27 +33,22 @@ export function OwnedSummary({
   bySpecies,
   warnings,
   sourceLabel,
+  playerRows,
   note,
   onImportAgain,
   onClear,
   onShare,
   onDownload,
 }: OwnedSummaryProps) {
-  const rows = useMemo(
-    () =>
-      ownedSpeciesIndices(bySpecies)
-        .filter((index) => pals[index] !== undefined)
-        .map((index) => ({ index, pal: pals[index], count: bySpecies[index].count }))
-        // Most-owned first: the species a plan is likely to lean on are the ones at the top.
-        .sort((a, b) => b.count - a.count || a.pal.name.localeCompare(b.pal.name)),
-    [bySpecies, pals],
-  )
-  const total = ownedCount(bySpecies)
+  const rows = useMemo(() => ownedRows(pals, bySpecies), [bySpecies, pals])
+  // Summed over the rows actually rendered, not over the whole store: a list carrying species this
+  // build doesn't have would otherwise print a total the grid below it can't account for.
+  const total = rows.reduce((sum, row) => sum + row.count, 0)
   // One string rather than a row of JSX expressions: this line is the panel's headline, and a
   // sentence split across a dozen text nodes is one no assistive tech or test can read as a whole.
   const countLine = `${rows.length} species · ${total} pal${total === 1 ? '' : 's'}${
-    sourceLabel === null ? '' : ` · from ${sourceLabel}`
-  }`
+    playerRows > 0 ? ` · guild of ${playerRows} player${playerRows === 1 ? '' : 's'}` : ''
+  }${sourceLabel === null ? '' : ` · from ${sourceLabel}`}`
 
   return (
     <div className="owned-summary">

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChainRequest, ChainResponse, ChainStep } from '../../engine/types.ts'
-import { ownedSpeciesIndices, useOwnedStore } from '../../state/owned.ts'
+import { hasOwnedFor, ownedSpeciesIndices, useOwnedStore } from '../../state/owned.ts'
 import { useWorkbenchStore } from '../../state/store.ts'
 import { useDataset } from '../dataset-context.ts'
 import { PalTile } from '../PalTile.tsx'
@@ -14,7 +14,7 @@ type ChainState =
   | { status: 'loading' }
   /** Reachable one way only: MY PALS switched off with no parent slot filled. */
   | { status: 'no-starters' }
-  | { status: 'done'; steps: ChainStep[] | null; depth: number; strict: boolean }
+  | { status: 'done'; steps: ChainStep[] | null; depth: number; strict: boolean; owned: boolean }
   | { status: 'error'; message: string }
 
 /**
@@ -27,6 +27,8 @@ interface InFlight {
   id: number
   depth: number
   strict: boolean
+  /** Whether the starters came from the owned list — the two empty states advise differently. */
+  owned: boolean
   expired: boolean
 }
 
@@ -47,7 +49,7 @@ export function ChainView() {
   const bySpecies = useOwnedStore((s) => s.bySpecies)
 
   const workerRef = useRef<Worker | null>(null)
-  const inFlightRef = useRef<InFlight>({ id: 0, depth, strict: false, expired: true })
+  const inFlightRef = useRef<InFlight>({ id: 0, depth, strict: false, owned: false, expired: true })
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<ChainState>({ status: 'loading' })
@@ -61,7 +63,7 @@ export function ChainView() {
     [bySpecies, ds],
   )
   const ownedSet = useMemo(() => new Set(ownedIndices), [ownedIndices])
-  const hasOwned = ownedIndices.length > 0
+  const hasOwned = hasOwnedFor(bySpecies, ds.pals.length)
   /**
    * Off by default once a parent slot is filled by hand — picking a starter means "chain from this
    * one" — and on otherwise, which is the only reason CHAINS is offered without a starter at all.
@@ -94,7 +96,13 @@ export function ChainView() {
       inFlightRef.current = { ...inFlight, expired: true }
       setState(
         event.data.ok
-          ? { status: 'done', steps: event.data.steps, depth: inFlight.depth, strict: inFlight.strict }
+          ? {
+              status: 'done',
+              steps: event.data.steps,
+              depth: inFlight.depth,
+              strict: inFlight.strict,
+              owned: inFlight.owned,
+            }
           : { status: 'error', message: event.data.error },
       )
     }
@@ -124,11 +132,11 @@ export function ChainView() {
     // Expire *here*, not in the debounce callback below: for the next 150ms the screen is already
     // showing the new slots, so an answer to the question the old ones asked must not land.
     const id = inFlightRef.current.id + 1
-    inFlightRef.current = { id, depth, strict, expired: true }
+    inFlightRef.current = { id, depth, strict, owned: ownedOn, expired: true }
     setState({ status: 'loading' })
 
     const debounce = setTimeout(() => {
-      inFlightRef.current = { id, depth, strict, expired: false }
+      inFlightRef.current = { id, depth, strict, owned: ownedOn, expired: false }
       const request: ChainRequest = {
         requestId: id,
         starters,
@@ -148,7 +156,7 @@ export function ChainView() {
       clearTimeout(debounce)
       clearTimer()
     }
-  }, [attempt, clearTimer, depth, starters, target])
+  }, [attempt, clearTimer, depth, ownedOn, starters, target])
 
   if (target === null) return <p className="panel-note">pick a starter and a target to plan a chain</p>
 
@@ -260,7 +268,18 @@ export function ChainView() {
         </div>
       )}
 
-      {state.status === 'done' && state.steps === null && state.strict && (
+      {/*
+        Strict mode has two quite different causes, and the advice differs: a player who picked two
+        parents by hand can pick differently, while one chaining from a whole palbox cannot — for
+        them the lever is depth, or catching something new.
+      */}
+      {state.status === 'done' && state.steps === null && state.strict && state.owned && (
+        <p className="panel-note">
+          no path within {state.depth} breeds from the pals you own — raise depth, catch more species, or add a starter
+        </p>
+      )}
+
+      {state.status === 'done' && state.steps === null && state.strict && !state.owned && (
         <p className="panel-note">
           no path within {state.depth} breeds using only these pals — chains here use ONLY the pals you selected (+
           their children); try adding another starter or use a single starter for free-partner chains

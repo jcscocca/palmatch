@@ -2,9 +2,11 @@ import { ParseError } from './types.ts'
 
 /**
  * GVAS reader, narrowed to the one path we need: root -> `worldSaveData` ->
- * `CharacterSaveParameterMap` -> per-entry `RawData` bytes. Everything else is skipped by its
- * declared size (reference §3.4) rather than parsed, which is what keeps a 400 MB save affordable —
- * the ~90% of `worldSaveData` we never look at costs one offset addition per property.
+ * `CharacterSaveParameterMap` -> per-entry `RawData` bytes. Every layout claim below is cited from
+ * `docs/superpowers/reference/save-format.md` (as "reference §n"). Everything off that path is
+ * skipped by its declared size (reference §3.4) rather than parsed, which is what keeps a 400 MB
+ * save affordable — the ~90% of `worldSaveData` we never look at costs one offset addition per
+ * property.
  *
  * Skipping by size is the one rule neither reference implementation actually uses (both fully parse
  * everything), so reference §8 asks for a runtime self-check. There are two, and between them every
@@ -176,7 +178,7 @@ function optionalGuid(cur: Cursor): void {
  * wrong guess desyncs and is then caught by the plausibility check below, which is a strictly better
  * outcome than refusing to read a save because it contains one unfamiliar type.
  */
-export function readTag(cur: Cursor): PropertyTag | null {
+function readTag(cur: Cursor): PropertyTag | null {
   const at = cur.offset
   const name = cur.fstring()
   if (name === 'None') return null
@@ -232,7 +234,7 @@ function pathTo(cur: Cursor, tag: PropertyTag): string {
 }
 
 /** Jump past a value we don't want. The only line in the parser that makes big saves cheap. */
-export function skipValue(cur: Cursor, tag: PropertyTag): void {
+function skipValue(cur: Cursor, tag: PropertyTag): void {
   const end = tag.dataStart + tag.size
   if (end > cur.bytes.byteLength) {
     throw new ParseError(
@@ -244,7 +246,7 @@ export function skipValue(cur: Cursor, tag: PropertyTag): void {
 }
 
 /** The self-check of reference §8: a value we parsed must consume exactly what its tag declared. */
-export function endValue(cur: Cursor, tag: PropertyTag): void {
+function endValue(cur: Cursor, tag: PropertyTag): void {
   const consumed = cur.offset - tag.dataStart
   if (consumed !== tag.size) {
     throw new ParseError(
@@ -275,7 +277,7 @@ export function eachProperty(cur: Cursor, visit: Visit): void {
 }
 
 /** Reads and discards a bare property list (map keys). */
-export function skipPropertyList(cur: Cursor): void {
+function skipPropertyList(cur: Cursor): void {
   eachProperty(cur, () => 'skip')
 }
 
@@ -318,7 +320,7 @@ export function readGvasHeader(cur: Cursor): GvasHeader {
 }
 
 /** `u32 count` + `count` bytes, with PC's cross-check that the count fills the declared value. */
-export function readByteArray(cur: Cursor, tag: PropertyTag): Uint8Array {
+function readByteArray(cur: Cursor, tag: PropertyTag): Uint8Array {
   const count = cur.u32()
   if (count !== tag.size - 4) {
     throw new ParseError(
@@ -329,7 +331,7 @@ export function readByteArray(cur: Cursor, tag: PropertyTag): Uint8Array {
   return cur.take(count)
 }
 
-/** `u32 count` + bare FStrings (no per-element tag — reference §3.5). */
+/** `u32 count` + bare FStrings (no per-element tag — reference §3.5). Read by `character.ts`. */
 export function readStringArray(cur: Cursor, tag: PropertyTag): string[] {
   const count = cur.u32()
   if (count > cur.remaining) {
@@ -355,7 +357,11 @@ export interface CharacterMap {
  * one without it is the wrong file regardless of what it calls itself.
  */
 export function openCharacterMap(cur: Cursor, className: string): CharacterMap {
-  // A holder rather than a `let`: TypeScript doesn't track assignments made inside the visitor.
+  // A mutable holder object rather than a plain `let`, and the same idiom wherever a visitor has to
+  // hand something back (see `readEntryRawData`). TypeScript's control-flow analysis does not track
+  // assignments made inside a callback, so a `let x: T | null = null` written only in the visitor
+  // still reads as `null` at the return — which compiles, but types every such value as `null` and
+  // hides a real mistake if the assignment is ever dropped. A property write is not narrowed.
   const out: { found: CharacterMap | null } = { found: null }
 
   eachProperty(cur, (tag) => {
@@ -392,6 +398,18 @@ export function openCharacterMap(cur: Cursor, className: string): CharacterMap {
 }
 
 /**
+ * Closes the walk `openCharacterMap` opened, once every entry has been read: the map's entries have
+ * to consume exactly the size its tag declared, which is the strongest end-to-end check there is on
+ * the whole walk — anything else means a skip landed in the wrong place and the pals are fiction.
+ * Paired with `openCharacterMap` here rather than left to the caller so the breadcrumb the error
+ * carries (`worldSaveData.CharacterSaveParameterMap`) is set by the module that knows the path.
+ */
+export function closeCharacterMap(cur: Cursor, map: CharacterMap): void {
+  cur.path = 'worldSaveData'
+  endValue(cur, map.tag)
+}
+
+/**
  * One map entry: the key (a nested property list of GUIDs) is read and dropped, the value is scanned
  * for its `RawData` child. The value list is always read to its terminator even after `RawData` is
  * found — bailing early would leave the cursor mid-entry and desync every entry after it.
@@ -400,12 +418,13 @@ export function readEntryRawData(cur: Cursor, index: number): Uint8Array | null 
   cur.path = `CharacterSaveParameterMap[${index}].Key`
   skipPropertyList(cur)
   cur.path = `CharacterSaveParameterMap[${index}].Value`
-  let raw: Uint8Array | null = null
+  // Holder object, per the note in `openCharacterMap`.
+  const out: { raw: Uint8Array | null } = { raw: null }
   eachProperty(cur, (tag) => {
     // CustomVersionData is the same shape but is a version blob, not a tree (reference §4.2).
     if (tag.name.toLowerCase() !== 'rawdata' || tag.type !== 'ArrayProperty') return 'skip'
-    raw = readByteArray(cur, tag)
+    out.raw = readByteArray(cur, tag)
     return 'read'
   })
-  return raw
+  return out.raw
 }

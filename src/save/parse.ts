@@ -1,8 +1,14 @@
 import { readCharacterFields, resolveSpecies } from './character.ts'
-import { Cursor, endValue, openCharacterMap, readEntryRawData, readGvasHeader } from './gvas.ts'
+import { Cursor, closeCharacterMap, openCharacterMap, readEntryRawData, readGvasHeader } from './gvas.ts'
 import type { OozDecompress } from './ooz.ts'
 import { ParseError, type ImportResult, type OwnedPal } from './types.ts'
 import { decompressSave } from './wrapper.ts'
+
+/**
+ * The orchestrator: wrapper -> GVAS header -> character map -> one `OwnedPal` per row. The byte
+ * layout every step of that relies on is `docs/superpowers/reference/save-format.md` (§7 is the
+ * checklist this function walks).
+ */
 
 /**
  * Ceiling on the file we accept at all, checked before a byte is touched. A `Level.sav` from a
@@ -37,26 +43,35 @@ export async function parseSave(
 
   const owned: OwnedPal[] = []
   const unknown = new Set<string>()
-  const oddTypes = new Set<string>()
-  let nonPalRows = 0
+  const odd = new Set<string>()
+  let playerRows = 0
+  let unreadableRows = 0
   let palCount = 0
   let unknownPals = 0
 
   for (let i = 0; i < map.count; i++) {
-    // An entry whose value list holds no RawData is a row we can't interpret at all — it counts as
-    // neither a pal nor a player. That only happens on a damaged file, and losing one row is a
-    // better answer there than refusing the whole save.
+    // An entry whose value list holds no RawData is a row we can't interpret at all. That only
+    // happens on a damaged file, and losing one row is a better answer there than refusing the
+    // whole save — but it is counted, so the three row tallies still add up to the map's own count.
     const raw = readEntryRawData(cur, i)
-    if (raw === null) continue
+    if (raw === null) {
+      unreadableRows++
+      continue
+    }
     const fields = readCharacterFields(raw, `CharacterSaveParameterMap[${i}].Value.RawData`)
 
-    for (const odd of fields.oddTypes) oddTypes.add(odd)
+    for (const type of fields.oddTypes) odd.add(type)
 
-    // Players share the map with their pals. They are marked `IsPlayer`, and (per PLM's survey of a
-    // real world) carry no `CharacterID` at all — treat either as "not a pal" so the counts add up.
+    // Players share the map with their pals, one row each — a guild world has several. They are
+    // marked `IsPlayer` and (per PLM's survey of a real world) carry no `CharacterID` at all, so
+    // the two tests are kept apart: the first is a player, the second is a row we can't read.
+    if (fields.isPlayer) {
+      playerRows++
+      continue
+    }
     const id = fields.characterId
-    if (fields.isPlayer || id === null || id.toLowerCase() === 'none') {
-      nonPalRows++
+    if (id === null || id.toLowerCase() === 'none') {
+      unreadableRows++
       continue
     }
     palCount++
@@ -77,16 +92,19 @@ export async function parseSave(
 
   // End-to-end check on the whole walk: every entry we just read has to add up to the size the map
   // declared. Anything else means a skip landed in the wrong place and the pals above are fiction.
-  cur.path = 'worldSaveData'
-  endValue(cur, map.tag)
+  closeCharacterMap(cur, map)
 
   const unknownSpecies = [...unknown].sort()
+  const oddTypes = [...odd].sort()
   return {
     owned,
     unknownSpecies,
-    nonPalRows,
+    unknownPals,
+    oddTypes,
+    playerRows,
+    unreadableRows,
     palCount,
-    warnings: buildWarnings(unknownSpecies, unknownPals, [...oddTypes].sort()),
+    warnings: buildWarnings(unknownSpecies, unknownPals, oddTypes),
   }
 }
 

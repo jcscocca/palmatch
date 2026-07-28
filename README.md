@@ -40,6 +40,50 @@ first.** The cache is keyed by file presence only, not by commit — `npm run da
 stale `.cache/` will happily keep serving the old commit's `db.json`/`breeding.json`/sprites instead
 of fetching the new ones.
 
+## MY PALS (save import)
+
+MY PALS reads a Palworld `Level.sav` and turns it into an owned-species list the workbench and
+breeding planner use. Drop the file onto the dialog, use BROWSE…, or (Chromium only) FIND MY SAVE
+FOLDER, which walks a folder you pick up to two levels deep looking for `Level.sav`. Parsing runs
+in a Web Worker.
+
+**The save is never uploaded anywhere — palmatch has no server, it's a static site, and the file
+never leaves the browser tab.** The owned list is kept in `localStorage`
+(`palmatch.owned.v1`), not in the URL.
+
+**Where the save lives**
+
+- Windows: `%LOCALAPPDATA%\Pal\Saved\SaveGames\<steam-id>\<world-id>\Level.sav`
+- Dedicated server: `Pal/Saved/SaveGames/0/<world-id>/Level.sav`
+- Steam Deck / Linux (Proton): `~/.steam/steam/steamapps/compatdata/1623730/pfx/drive_c/users/steamuser/AppData/Local/Pal/Saved/SaveGames/`
+
+**Share links & `.palmatch.json`**
+
+SHARE copies a `#/own/<blob>` link — deflate + base64url of species indices and counts, nothing
+else (no passives, no IVs, no player names). DOWNLOAD writes `my-pals.palmatch.json` with the same
+payload, droppable back into the panel on any machine. Opening a shared link asks for confirmation
+before it replaces the recipient's list, and any species the receiving build doesn't recognize are
+dropped, with a count shown.
+
+**Xbox / Game Pass saves aren't supported.** They're a different (`CNK0`) container format and are
+rejected with a clear message. Only Steam/PC saves, and dedicated server saves, can be read.
+
+**Troubleshooting**
+
+| what you see | what it means | what to do |
+| --- | --- | --- |
+| "this is an Xbox/Game Pass save — palmatch can only read Steam/PC saves" | wrong container format | use a Steam/PC (or dedicated server) save |
+| "that doesn't look like a Palworld save — `<file>` isn't one" | not a Palworld save at all | pick the right file |
+| "that's `<file>` — you want Level.sav, the big one in your world folder" | wrong file from the world folder | drop `Level.sav` |
+| "`<file>` is bigger than the 500 MB palmatch can hold — deleting unused bases and pals in-game shrinks Level.sav" | over the 500 MB cap | shrink the save in-game, retry |
+| "that save is corrupt or was cut short — try a fresh copy, taken while the game is closed" | truncated file or bad compressed stream | copy it again with the game closed; if it recurs, file an issue with the detail line shown |
+| "palmatch lost its place reading that save — its format isn't what this version expects" | parser's byte-format assumptions don't hold here | file an issue with the detail line shown |
+| "palmatch does not recognise this save format — the game may have updated it" | unknown magic bytes | file an issue with the detail line shown |
+| "something went wrong reading that file" | unexpected internal error | file an issue with the detail line shown |
+| "that import did not finish within 60 seconds — try again, or with a smaller world" | worker timeout | retry; if it recurs, file an issue with the detail line shown |
+| "that shared list is damaged or too old to read — ask for a fresh one" | share link/file failed to decode | ask the sender for a fresh one |
+| "no Level.sav in that folder — pick the SaveGames folder, or a world folder inside it" | nothing found in the 2-level walk | pick a folder closer to `Level.sav` |
+
 ## Deploy
 
 Pushing to `main` builds and deploys the site via `.github/workflows/deploy.yml` (GitHub Pages,

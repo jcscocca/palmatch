@@ -1,10 +1,11 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadDatasetFromDisk } from '../engine/dataset.ts'
+import { buildLowerLookup } from '../lib/lower-lookup.ts'
 import { cnk0, junkFile, levelGvas, plz1, type PalSpec } from './fixtures/builder.ts'
 import type { SaveImportRequest, SaveImportResponse } from './types.ts'
 
 interface FakeScope {
-  onmessage: ((event: MessageEvent<SaveImportRequest>) => void) | null
+  onmessage: ((event: MessageEvent<SaveImportRequest | undefined>) => void) | null
   postMessage(message: SaveImportResponse): void
 }
 
@@ -13,11 +14,11 @@ let posted: SaveImportResponse[]
 let scope: FakeScope
 
 /** Loads the worker against the stubbed scope and hands back its message port. */
-async function boot(): Promise<(req: SaveImportRequest) => void> {
+async function boot(): Promise<(req: SaveImportRequest | undefined) => void> {
   await import('./save-import.worker.ts')
   const handler = scope.onmessage
   if (handler === null) throw new Error('worker never registered a message handler')
-  return (req) => handler({ data: req } as unknown as MessageEvent<SaveImportRequest>)
+  return (req) => handler({ data: req } as MessageEvent<SaveImportRequest | undefined>)
 }
 
 function save(pals: PalSpec[]): ArrayBuffer {
@@ -26,7 +27,7 @@ function save(pals: PalSpec[]): ArrayBuffer {
 
 beforeAll(async () => {
   const ds = await loadDatasetFromDisk('public/data')
-  byIdLower = [...ds.byId].map(([id, index]) => [id.toLowerCase(), index])
+  byIdLower = [...buildLowerLookup(ds.byId)]
 })
 
 beforeEach(() => {
@@ -60,7 +61,7 @@ describe('save-import.worker', () => {
     expect(response.ok).toBe(true)
     if (!response.ok) throw new Error(response.detail)
     expect(response.requestId).toBe(7)
-    expect(response.result.nonPalRows).toBe(1)
+    expect(response.result.playerRows).toBe(1)
     expect(response.result.owned).toEqual([
       { speciesIndex: expect.any(Number), gender: 'F', passives: [], talents: { hp: 90, shot: 0, defense: 0 } },
     ])
@@ -103,6 +104,20 @@ describe('save-import.worker', () => {
     expect(response).toMatchObject({ ok: false, requestId: 3, code })
     if (response.ok) throw new Error('expected a failure')
     expect(response.detail.length).toBeGreaterThan(0)
+  })
+
+  it('answers a message with no request in it, rather than rejecting into the void', async () => {
+    const send = await boot()
+
+    // Anything can `postMessage` at a worker — an empty call, a probe from an extension. Reading
+    // the id inside the try would throw while building the failure response, leaving the promise
+    // rejected with nothing sent and the panel waiting out its full 60-second timeout.
+    send(undefined)
+
+    await vi.waitFor(() => expect(posted).toHaveLength(1))
+    // `-1` matches no in-flight request, so the panel discards it — which is the right fate for an
+    // answer to a question nobody asked.
+    expect(posted[0]).toMatchObject({ ok: false, requestId: -1, code: 'internal' })
   })
 
   it('reports an unforeseen throw as internal rather than as a verdict on the file', async () => {

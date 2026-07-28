@@ -3,8 +3,11 @@ import { Cursor, eachProperty, readStringArray, type PropertyTag } from './gvas.
 import type { Talents } from './types.ts'
 
 /**
- * The per-entry `RawData` blob is a second, self-contained property tree (reference §4.2) holding
- * one `SaveParameter` struct — the pal itself. Everything in it is optional: Palworld omits any
+ * The per-entry `RawData` blob is a second, self-contained property tree holding one
+ * `SaveParameter` struct — the pal itself. Section numbers below are
+ * `docs/superpowers/reference/save-format.md`; this module is its §4.2-§4.3.
+ *
+ * Everything in the tree is optional: Palworld omits any
  * property sitting at its default, so a missing `Talent_Shot` or `PassiveSkillList` is a default,
  * not a parse failure. Nothing here throws on absence; the only errors that escape come from the
  * byte walker underneath, and those mean our format assumptions are wrong.

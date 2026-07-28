@@ -1,19 +1,13 @@
-import { deflate } from 'pako'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { PalRecord } from '../engine/types.ts'
 import type { ImportResult, OwnedPal } from '../save/types.ts'
 import {
   createOwnedStore,
-  decodeOwnedShare,
-  encodeOwnedShare,
+  hasOwnedFor,
   MAX_STORED_INDIVIDUALS,
   OWNED_STORAGE_KEY,
-  ownedCount,
-  ownedShareLink,
+  ownedRows,
   ownedSpeciesIndices,
-  parseOwnedShareJson,
-  sanitizeShare,
-  shareJson,
-  shareSpecies,
 } from './owned.ts'
 import type { OwnedBySpecies } from './owned.ts'
 
@@ -21,8 +15,22 @@ function pal(speciesIndex: number, passives: string[] = []): OwnedPal {
   return { speciesIndex, gender: 'F', passives, talents: null }
 }
 
-function result(owned: OwnedPal[], warnings: string[] = []): ImportResult {
-  return { owned, unknownSpecies: [], nonPalRows: 1, palCount: owned.length, warnings }
+function result(owned: OwnedPal[], warnings: string[] = [], playerRows = 1): ImportResult {
+  return {
+    owned,
+    unknownSpecies: [],
+    unknownPals: 0,
+    oddTypes: [],
+    playerRows,
+    unreadableRows: 0,
+    palCount: owned.length,
+    warnings,
+  }
+}
+
+/** Only `name` is read by anything under test, so the rest of a `PalRecord` is not built. */
+function fakePals(...names: string[]): PalRecord[] {
+  return names.map((name) => ({ name })) as PalRecord[]
 }
 
 /**
@@ -66,6 +74,16 @@ describe('owned store', () => {
     expect(Date.parse(s.importedAt ?? '')).not.toBeNaN()
   })
 
+  it('carries the save’s player count, so the summary can say whose palbox this is', () => {
+    const store = createOwnedStore()
+    store.getState().setOwned(result([pal(3)], [], 4), 'Level.sav')
+    expect(store.getState().playerRows).toBe(4)
+
+    // A shared list is species and counts; there is no guild behind it to report.
+    store.getState().loadShared([[3, 1]], 'shared list')
+    expect(store.getState().playerRows).toBe(0)
+  })
+
   it('caps stored individuals per species, keeping the ones with the most passives', () => {
     const store = createOwnedStore()
     const many = [0, 1, 2, 3, 4, 2, 1].map((n, i) => pal(9, Array.from({ length: n }, (_, k) => `p${i}-${k}`)))
@@ -78,11 +96,10 @@ describe('owned store', () => {
     expect(entry.individuals.map((i) => i.passives.length)).toEqual([4, 3, 2, 2, 1])
   })
 
-  it('derives species indices (ascending) and a total pal count', () => {
+  it('derives species indices ascending', () => {
     const store = createOwnedStore()
     store.getState().setOwned(result([pal(7), pal(3), pal(3)]), 'Level.sav')
     expect(ownedSpeciesIndices(store.getState().bySpecies)).toEqual([3, 7])
-    expect(ownedCount(store.getState().bySpecies)).toBe(3)
   })
 
   it('loadShared installs counts with no individuals, since a link never carries them', () => {
@@ -100,12 +117,21 @@ describe('owned store', () => {
 
   it('round-trips through localStorage into a fresh store', () => {
     const store = createOwnedStore()
-    store.getState().setOwned(result([pal(3, ['Swift']), pal(5)]), 'Level.sav')
+    store.getState().setOwned(result([pal(3, ['Swift']), pal(5)], [], 2), 'Level.sav')
 
     const reloaded = createOwnedStore()
     expect(reloaded.getState().bySpecies).toEqual(store.getState().bySpecies)
     expect(reloaded.getState().sourceLabel).toBe('Level.sav')
     expect(reloaded.getState().importedAt).toBe(store.getState().importedAt)
+    expect(reloaded.getState().playerRows).toBe(2)
+  })
+
+  it('writes only the data fields, never anything the store hangs off state', () => {
+    const store = createOwnedStore()
+    store.getState().setOwned(result([pal(3)]), 'Level.sav')
+
+    const stored = JSON.parse(localStorage.getItem(OWNED_STORAGE_KEY) ?? '{}') as { data: Record<string, unknown> }
+    expect(Object.keys(stored.data).sort()).toEqual(['bySpecies', 'importedAt', 'playerRows', 'sourceLabel', 'warnings'])
   })
 
   it('clearOwned empties the store and leaves nothing behind in storage', () => {
@@ -133,6 +159,22 @@ describe('owned store', () => {
       'a non-numeric species key',
       '{"v":1,"data":{"bySpecies":{"lamball":{"count":1,"individuals":[]}},"importedAt":null,"sourceLabel":null,"warnings":[]}}',
     ],
+    [
+      'a fractional count',
+      '{"v":1,"data":{"bySpecies":{"3":{"count":1.5,"individuals":[]}},"importedAt":null,"sourceLabel":null,"warnings":[]}}',
+    ],
+    [
+      'a count that overflowed into Infinity',
+      '{"v":1,"data":{"bySpecies":{"3":{"count":1e400,"individuals":[]}},"importedAt":null,"sourceLabel":null,"warnings":[]}}',
+    ],
+    [
+      'an individual that is not one',
+      '{"v":1,"data":{"bySpecies":{"3":{"count":1,"individuals":[7]}},"importedAt":null,"sourceLabel":null,"warnings":[]}}',
+    ],
+    [
+      'a negative player count',
+      '{"v":1,"data":{"bySpecies":{},"importedAt":null,"sourceLabel":null,"warnings":[],"playerRows":-1}}',
+    ],
   ])('ignores %s rather than starting up broken', (_label, stored) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     localStorage.setItem(OWNED_STORAGE_KEY, stored)
@@ -141,6 +183,42 @@ describe('owned store', () => {
     expect(store.getState().bySpecies).toEqual({})
     expect(store.getState().importedAt).toBeNull()
     expect(warn).toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a talent that is not a number', '{"hp":"nope","shot":1,"defense":1}'],
+    ['an array where the IVs should be', '[]'],
+    ['only some of the three', '{"hp":50}'],
+    ['a scalar', '7'],
+  ])('keeps a list whose IVs are %s, reading them as unknown rather than as zeroes', (_label, talents) => {
+    localStorage.setItem(
+      OWNED_STORAGE_KEY,
+      `{"v":1,"data":{"bySpecies":{"3":{"count":1,"individuals":[{"gender":"F","passives":[],"talents":${talents}}]}},"importedAt":"2026-07-27T00:00:00.000Z","sourceLabel":"Level.sav","warnings":[]}}`,
+    )
+
+    const store = createOwnedStore()
+    // The species survives — losing a whole palbox over one unreadable IV block would be absurd —
+    // but the IVs are null, which already means "this save never said", not "all zeroes".
+    expect(store.getState().bySpecies[3].count).toBe(1)
+    expect(store.getState().bySpecies[3].individuals[0].talents).toBeNull()
+  })
+
+  it('keeps a full set of numeric IVs', () => {
+    localStorage.setItem(
+      OWNED_STORAGE_KEY,
+      '{"v":1,"data":{"bySpecies":{"3":{"count":1,"individuals":[{"gender":"F","passives":[],"talents":{"hp":80,"shot":55,"defense":30}}]}},"importedAt":"2026-07-27T00:00:00.000Z","sourceLabel":null,"warnings":[]}}',
+    )
+    expect(createOwnedStore().getState().bySpecies[3].individuals[0].talents).toEqual({ hp: 80, shot: 55, defense: 30 })
+  })
+
+  it('reads a list stored before the player count existed', () => {
+    localStorage.setItem(
+      OWNED_STORAGE_KEY,
+      '{"v":1,"data":{"bySpecies":{"3":{"count":1,"individuals":[]}},"importedAt":"2026-07-27T00:00:00.000Z","sourceLabel":"Level.sav","warnings":[]}}',
+    )
+    const store = createOwnedStore()
+    expect(store.getState().playerRows).toBe(0)
+    expect(store.getState().bySpecies[3].count).toBe(1)
   })
 
   it('survives a localStorage that throws on every access (Safari private mode)', () => {
@@ -162,73 +240,33 @@ describe('owned store', () => {
   })
 })
 
-const SAMPLE: OwnedBySpecies = {
-  3: { count: 2, individuals: [{ gender: 'F', passives: ['Swift'], talents: null }] },
-  11: { count: 1, individuals: [] },
-}
+describe('dataset-aware selectors', () => {
+  const list: OwnedBySpecies = {
+    0: { count: 1, individuals: [] },
+    2: { count: 9, individuals: [] },
+    900: { count: 4, individuals: [] },
+  }
 
-describe('share codec', () => {
-  it('round-trips species and counts, and leaves individuals out of the payload', () => {
-    const blob = encodeOwnedShare(SAMPLE)
-    expect(blob).toMatch(/^[A-Za-z0-9_-]+$/)
-
-    const decoded = decodeOwnedShare(blob)
-    expect(decoded).toEqual({ v: 1, species: [[3, 2], [11, 1]] })
-    expect(JSON.stringify(decoded)).not.toContain('Swift')
-  })
-
-  it('builds a link on the current origin and path, with no query string carried over', () => {
-    const location = { origin: 'https://example.test', pathname: '/palmatch/' } as Location
-    expect(ownedShareLink(SAMPLE, location)).toBe(`https://example.test/palmatch/#/own/${encodeOwnedShare(SAMPLE)}`)
-  })
-
-  it.each([
-    ['an empty blob', ''],
-    ['characters outside base64url', 'not a blob!'],
-    ['base64url that is not deflate', 'aGVsbG8gd29ybGQ'],
-    ['a deflate stream of the wrong payload', encodeOwnedShareOf('{"v":1,"species":[["3",2]]}')],
-    ['a payload from another version', encodeOwnedShareOf('{"v":9,"species":[[3,2]]}')],
-    ['a negative species index', encodeOwnedShareOf('{"v":1,"species":[[-1,2]]}')],
-    ['a zero count', encodeOwnedShareOf('{"v":1,"species":[[3,0]]}')],
-  ])('decodes %s to null instead of throwing', (_label, blob) => {
-    expect(() => decodeOwnedShare(blob)).not.toThrow()
-    expect(decodeOwnedShare(blob)).toBeNull()
-  })
-
-  it('decodes a tampered blob to null', () => {
-    const blob = encodeOwnedShare(SAMPLE)
-    const flipped = `${blob.slice(0, 4)}${blob[4] === 'A' ? 'B' : 'A'}${blob.slice(5)}`
-    expect(decodeOwnedShare(flipped)).toBeNull()
-  })
-
-  it('refuses a blob far larger than any real owned list, before inflating it', () => {
-    expect(decodeOwnedShare('A'.repeat(20000))).toBeNull()
-  })
-
-  it('shares the same payload with the .palmatch.json file', () => {
-    expect(parseOwnedShareJson(shareJson(SAMPLE))).toEqual(decodeOwnedShare(encodeOwnedShare(SAMPLE)))
-    expect(parseOwnedShareJson('{')).toBeNull()
-    expect(parseOwnedShareJson('[]')).toBeNull()
-  })
-
-  it('sorts the payload by species index, so the same list always yields the same link', () => {
-    const reversed: OwnedBySpecies = { 11: SAMPLE[11], 3: SAMPLE[3] }
-    expect(shareSpecies(reversed)).toEqual([
-      [3, 2],
-      [11, 1],
+  it('renders most-owned first, dropping species this build has never heard of', () => {
+    const rows = ownedRows(fakePals('Lamball', 'Cattiva', 'Chikipi'), list)
+    // 900 is gone entirely, and its 4 pals go with it — which is why the summary totals these rows
+    // rather than the store.
+    expect(rows.map((r) => [r.pal.name, r.count])).toEqual([
+      ['Chikipi', 9],
+      ['Lamball', 1],
     ])
-    expect(encodeOwnedShare(reversed)).toBe(encodeOwnedShare(SAMPLE))
   })
 
-  it('drops species the receiving build does not have, and says how many', () => {
-    expect(sanitizeShare([[1, 2], [900, 1]], 200)).toEqual({ species: [[1, 2]], dropped: 1 })
+  it('breaks a count tie by name, so the grid does not reshuffle between renders', () => {
+    const tied: OwnedBySpecies = { 0: { count: 2, individuals: [] }, 1: { count: 2, individuals: [] } }
+    expect(ownedRows(fakePals('Zoe', 'Alpha'), tied).map((r) => r.pal.name)).toEqual(['Alpha', 'Zoe'])
+  })
+
+  it('answers "owns anything usable" against the dataset, not against the raw list', () => {
+    const staleOnly: OwnedBySpecies = { 900: { count: 4, individuals: [] } }
+    expect(hasOwnedFor(list, 3)).toBe(true)
+    // Four pals in the store, none of them renderable: every control gated on this must stay away.
+    expect(hasOwnedFor(staleOnly, 3)).toBe(false)
+    expect(hasOwnedFor({}, 3)).toBe(false)
   })
 })
-
-/** Hand-built blobs for the failure table: a real deflate stream around a payload we choose. */
-function encodeOwnedShareOf(json: string): string {
-  const bytes = deflate(json)
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}

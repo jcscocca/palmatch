@@ -1,17 +1,41 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent, ReactNode } from 'react'
+import type { DragEvent, KeyboardEvent, ReactNode } from 'react'
+import { buildLowerLookup } from '../lib/lower-lookup.ts'
 import type { ParseErrorCode, SaveImportRequest, SaveImportResponse } from '../save/types.ts'
-import {
-  decodeOwnedShare,
-  ownedShareLink,
-  parseOwnedShareJson,
-  sanitizeShare,
-  shareJson,
-  useOwnedStore,
-} from '../state/owned.ts'
+import { useOwnedStore } from '../state/owned.ts'
 import type { SharedSpecies } from '../state/owned.ts'
 import { useDataset } from './dataset-context.ts'
 import { OwnedSummary } from './OwnedSummary.tsx'
+
+/**
+ * The share codec, loaded on demand. `owned-share.ts` pulls in pako's deflate+inflate (~42 KB raw,
+ * ~13 KB gzipped) for a feature only this dialog offers, and a static import from here would put it
+ * in the entry chunk — this component is mounted conditionally but imported eagerly by `Workbench`.
+ * A dynamic `import()` is what actually splits it out.
+ *
+ * Module-scoped rather than per-instance, and warmed the moment the panel mounts, so that by the
+ * time SHARE or DOWNLOAD is clicked the module is already resolved and the clipboard write stays
+ * inside the user's gesture — Safari refuses one issued after an `await`.
+ */
+type ShareCodec = typeof import('../state/owned-share.ts')
+
+let codecModule: ShareCodec | null = null
+let codecPromise: Promise<ShareCodec> | null = null
+
+function loadCodec(): Promise<ShareCodec> {
+  codecPromise ??= import('../state/owned-share.ts').then(
+    (module) => {
+      codecModule = module
+      return module
+    },
+    (cause: unknown) => {
+      // Cleared so a chunk load that failed on a flaky network is retried rather than remembered.
+      codecPromise = null
+      throw cause
+    },
+  )
+  return codecPromise
+}
 
 /**
  * Mirrors `MAX_SAVE_BYTES` in `src/save/parse.ts`. Duplicated rather than imported so the panel
@@ -179,6 +203,11 @@ export interface ImportPanelProps {
    * player's own list would be a rude thing for a link to do.
    */
   shareBlob?: string | null
+  /**
+   * Opened by a file dragged onto the page: start on the drop zone rather than on the summary, so
+   * the thing already in the player's hand has somewhere to land.
+   */
+  dropReady?: boolean
   onClose: () => void
 }
 
@@ -192,16 +221,17 @@ export interface ImportPanelProps {
  * nothing here should be running while the panel merely sits open, and the parse chunk (with its
  * wasm) should not load for a player who opened the dialog to read the path hints.
  */
-export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
+export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: ImportPanelProps) {
   const ds = useDataset()
   const bySpecies = useOwnedStore((s) => s.bySpecies)
   const warnings = useOwnedStore((s) => s.warnings)
   const sourceLabel = useOwnedStore((s) => s.sourceLabel)
+  const playerRows = useOwnedStore((s) => s.playerRows)
   const setOwned = useOwnedStore((s) => s.setOwned)
   const clearOwned = useOwnedStore((s) => s.clearOwned)
   const loadShared = useOwnedStore((s) => s.loadShared)
 
-  const [state, setState] = useState<PanelState>({ status: 'idle' })
+  const [state, setState] = useState<PanelState>(dropReady ? { status: 'picking' } : { status: 'idle' })
   const [note, setNote] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
 
@@ -215,10 +245,13 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
 
   // The worker resolves species itself but never loads the paldex — it gets the lookup as plain
   // entry pairs, built here from the dataset the app already has.
-  const byIdLower = useMemo<Array<[string, number]>>(
-    () => [...ds.byId].map(([id, index]) => [id.toLowerCase(), index]),
-    [ds.byId],
-  )
+  const byIdLower = useMemo<Array<[string, number]>>(() => [...buildLowerLookup(ds.byId)], [ds.byId])
+
+  // Warmed on open, not on click: see `loadCodec`. A failure is not surfaced here — the paths that
+  // need the codec each report their own, and a player who never shares never notices.
+  useEffect(() => {
+    loadCodec().catch(() => undefined)
+  }, [])
 
   // Dialog shell, per SearchPalette: open modally where the DOM supports it, restore focus to
   // whatever opened the panel on the way out.
@@ -251,6 +284,20 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
     timerRef.current = null
   }, [])
 
+  /**
+   * Drop whatever is in flight on the floor: expire the request id so a reply in transit is
+   * discarded, stop the timeout, and kill the worker so a parse of 400 MB isn't left chewing (and
+   * holding its decompressed copy, plus the wasm heap if it got that far) on a question nobody is
+   * waiting for. Called before every path that installs a new list, which is what closes the race
+   * where a share dropped mid-parse is silently clobbered seconds later by the save's own result.
+   */
+  const abortInFlight = useCallback((): void => {
+    inFlightRef.current = { ...inFlightRef.current, expired: true }
+    clearTimer()
+    workerRef.current?.terminate()
+    workerRef.current = null
+  }, [clearTimer])
+
   // Whatever is in flight when the panel closes is abandoned: a parse the player walked away from
   // must not resurface, and a worker chewing on 400 MB must not outlive the dialog.
   useEffect(() => {
@@ -265,37 +312,42 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
     }
   }, [])
 
+  /** Installs an already-sanitized shared list. `dropped` is only ever reported, never re-derived. */
   const applyShare = useCallback(
-    (species: SharedSpecies[], label: string): void => {
-      const sane = sanitizeShare(species, ds.pals.length)
-      if (sane.species.length === 0) {
+    (species: SharedSpecies[], dropped: number, label: string): void => {
+      abortInFlight()
+      if (species.length === 0) {
         setState({ status: 'error', code: 'bad-share', detail: 'none of its species exist in this paldex', label })
         return
       }
-      loadShared(sane.species, label)
-      setNote(
-        sane.dropped === 0
-          ? null
-          : `${sane.dropped} species in that list are unknown to this version and were left out`,
-      )
+      loadShared(species, label)
+      setNote(dropped === 0 ? null : `${dropped} species in that list are unknown to this version and were left out`)
       setState({ status: 'idle' })
     },
-    [ds.pals.length, loadShared],
+    [abortInFlight, loadShared],
   )
 
   const parseInWorker = useCallback(
     (label: string, buffer: ArrayBuffer): void => {
+      abortInFlight()
       const id = inFlightRef.current.id + 1
       inFlightRef.current = { id, expired: false }
-      workerRef.current?.terminate()
 
       const worker = new Worker(new URL('../save/save-import.worker.ts', import.meta.url), { type: 'module' })
       workerRef.current = worker
+      // The protocol is terminal — one answer per request — so the worker is retired the moment it
+      // gives one. Otherwise it sits idle holding its wasm linear memory (tens of MB, never returned
+      // to the OS) for as long as the player reads the summary.
+      const settle = (): void => {
+        inFlightRef.current = { ...inFlightRef.current, expired: true }
+        clearTimer()
+        worker.terminate()
+        if (workerRef.current === worker) workerRef.current = null
+      }
       worker.onmessage = (event: MessageEvent<SaveImportResponse>) => {
         const data = event.data
         if (inFlightRef.current.expired || data.requestId !== inFlightRef.current.id) return
-        inFlightRef.current = { ...inFlightRef.current, expired: true }
-        clearTimer()
+        settle()
         if (data.ok) {
           setOwned(data.result, label)
           setState({ status: 'idle' })
@@ -305,8 +357,7 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
       }
       worker.onerror = (event: ErrorEvent) => {
         if (inFlightRef.current.expired) return
-        inFlightRef.current = { ...inFlightRef.current, expired: true }
-        clearTimer()
+        settle()
         const detail = event.message === '' ? 'the import worker failed to start' : event.message
         setState({ status: 'error', code: 'internal', detail, label })
       }
@@ -315,18 +366,19 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
       worker.postMessage(request, [buffer])
       timerRef.current = setTimeout(() => {
         if (inFlightRef.current.id !== id || inFlightRef.current.expired) return
-        inFlightRef.current = { ...inFlightRef.current, expired: true }
-        workerRef.current?.terminate()
-        workerRef.current = null
+        settle()
         setState({ status: 'error', code: 'timeout', detail: `${label} was still parsing after 60 seconds`, label })
       }, TIMEOUT_MS)
     },
-    [byIdLower, clearTimer, setOwned],
+    [abortInFlight, byIdLower, clearTimer, setOwned],
   )
 
   const ingest = useCallback(
     (file: File): void => {
       setNote(null)
+      // Before the async read, not after it: from here on the panel is committed to this file, and
+      // an earlier parse still running must not be allowed to land on top of whatever it produces.
+      abortInFlight()
       // Checked against the *file's* size, before a byte is read: the point of the cap is not to
       // read half a gigabyte into the tab only to reject it.
       if (file.size > MAX_FILE_BYTES) {
@@ -339,12 +391,14 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
         return
       }
       setState({ status: 'parsing', label: file.name, bytes: file.size })
-      file.arrayBuffer().then(
-        (buffer) => {
+      // The codec await is normally already settled (it was warmed on mount) — it is here because
+      // telling a `.palmatch.json` from a `.sav` needs the payload validator.
+      Promise.all([file.arrayBuffer(), loadCodec()]).then(
+        ([buffer, codec]) => {
           // Reading a few hundred MB outlives an impatient close. Starting a worker here after the
           // unmount cleanup has run would leave one alive with nothing left to terminate it.
           if (closedRef.current) return
-          const share = sniffShareFile(file, buffer)
+          const share = sniffShareFile(file, buffer, codec.parseOwnedShareJson)
           if (share === 'invalid') {
             setState({
               status: 'error',
@@ -355,7 +409,8 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
             return
           }
           if (share !== null) {
-            applyShare(share, file.name)
+            const { species, dropped } = codec.sanitizeShare(share, ds.pals.length)
+            applyShare(species, dropped, file.name)
             return
           }
           parseInWorker(file.name, buffer)
@@ -366,23 +421,35 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
         },
       )
     },
-    [applyShare, parseInWorker],
+    [abortInFlight, applyShare, ds.pals.length, parseInWorker],
   )
 
   // A share link opens the panel straight into its confirm step (or an error, if the blob is junk).
   useEffect(() => {
     if (shareBlob === null || shareBlob === undefined) return
-    const payload = decodeOwnedShare(shareBlob)
-    if (payload === null) {
-      setState({ status: 'error', code: 'bad-share', detail: 'the link did not decode', label: '' })
-      return
+    let cancelled = false
+    loadCodec().then(
+      (codec) => {
+        if (cancelled) return
+        const payload = codec.decodeOwnedShare(shareBlob)
+        if (payload === null) {
+          setState({ status: 'error', code: 'bad-share', detail: 'the link did not decode', label: '' })
+          return
+        }
+        const { species, dropped } = codec.sanitizeShare(payload.species, ds.pals.length)
+        if (species.length === 0) {
+          setState({ status: 'error', code: 'bad-share', detail: 'none of its species exist in this paldex', label: '' })
+          return
+        }
+        setState({ status: 'confirm', species, dropped })
+      },
+      (cause: unknown) => {
+        if (!cancelled) setState({ status: 'error', code: 'internal', detail: messageOf(cause), label: '' })
+      },
+    )
+    return () => {
+      cancelled = true
     }
-    const { species, dropped } = sanitizeShare(payload.species, ds.pals.length)
-    if (species.length === 0) {
-      setState({ status: 'error', code: 'bad-share', detail: 'none of its species exist in this paldex', label: '' })
-      return
-    }
-    setState({ status: 'confirm', species, dropped })
   }, [ds.pals.length, shareBlob])
 
   const pickDirectory = useCallback((): void => {
@@ -393,11 +460,14 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
         const found: SaveCandidate[] = []
         try {
           await walkForSaves(dir, '', 0, found, { dirs: MAX_DIRECTORIES })
-          if (closedRef.current) return
         } catch (cause) {
+          // The guard belongs on the failure path too: a permission error raised after the player
+          // closed the dialog would otherwise re-render an unmounted panel's error state.
+          if (closedRef.current) return
           setState({ status: 'error', code: 'internal', detail: messageOf(cause), label: dir.name })
           return
         }
+        if (closedRef.current) return
         if (found.length === 0) {
           setState({
             status: 'error',
@@ -419,7 +489,17 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
   }, [ingest])
 
   const onShare = useCallback((): void => {
-    const link = ownedShareLink(bySpecies)
+    const codec = codecModule
+    // Only reachable by clicking within milliseconds of the panel opening; awaiting here instead
+    // would cost the clipboard its user gesture, which is a worse failure than asking again.
+    if (codec === null) {
+      loadCodec().then(
+        () => setNote('one moment — press SHARE again'),
+        () => setNote('could not build a link — reload the page and try again'),
+      )
+      return
+    }
+    const link = codec.ownedShareLink(bySpecies)
     const clipboard = navigator.clipboard as Clipboard | undefined
     if (clipboard === undefined || typeof clipboard.writeText !== 'function') {
       window.prompt('copy this link', link)
@@ -436,12 +516,20 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
   }, [bySpecies])
 
   const onDownload = useCallback((): void => {
+    const codec = codecModule
+    if (codec === null) {
+      loadCodec().then(
+        () => setNote('one moment — press DOWNLOAD again'),
+        () => setNote('could not build the file — reload the page and try again'),
+      )
+      return
+    }
     const createUrl = URL.createObjectURL as ((blob: Blob) => string) | undefined
     if (typeof createUrl !== 'function') {
       setNote('this browser cannot download the list — use SHARE instead')
       return
     }
-    const blob = new Blob([shareJson(bySpecies)], { type: 'application/json' })
+    const blob = new Blob([codec.shareJson(bySpecies)], { type: 'application/json' })
     const href = createUrl(blob)
     const anchor = document.createElement('a')
     anchor.href = href
@@ -488,7 +576,8 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
         if (fromBackdrop && e.target === dialogRef.current) onClose()
       }}
     >
-      <div className="import-panel">
+      {/* `palette` carries the modal box's whole look; `import-panel` only widens it. */}
+      <div className="palette import-panel">
         <div className="palette-head">
           <span className="label-caps">MY PALS</span>
           <button type="button" className="toast-close" aria-label="close my pals" onClick={onClose}>
@@ -555,7 +644,11 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
               </p>
             )}
             <div className="import-actions">
-              <button type="button" className="retry-btn" onClick={() => applyShare(state.species, 'shared list')}>
+              <button
+                type="button"
+                className="retry-btn"
+                onClick={() => applyShare(state.species, state.dropped, 'shared list')}
+              >
                 LOAD
               </button>
               <button type="button" className="file-btn" onClick={onClose}>
@@ -571,6 +664,7 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
             bySpecies={bySpecies}
             warnings={warnings}
             sourceLabel={sourceLabel}
+            playerRows={playerRows}
             note={note}
             onImportAgain={() => {
               setNote(null)
@@ -595,13 +689,19 @@ export function ImportPanel({ shareBlob = null, onClose }: ImportPanelProps) {
  * corrupted list gets the list error instead of a baffling save error; the byte check catches a
  * renamed one. A `.sav` that happens to start with `{` still falls through to the parser, because
  * it won't parse as a payload.
+ *
+ * `parseJson` is passed in rather than imported: it lives in the lazily-loaded share codec.
  */
-function sniffShareFile(file: File, buffer: ArrayBuffer): SharedSpecies[] | 'invalid' | null {
+function sniffShareFile(
+  file: File,
+  buffer: ArrayBuffer,
+  parseJson: (text: string) => { species: SharedSpecies[] } | null,
+): SharedSpecies[] | 'invalid' | null {
   const named = file.name.toLowerCase().endsWith('.json')
   if (buffer.byteLength === 0) return named ? 'invalid' : null
   if (!named && (buffer.byteLength > SHARE_FILE_MAX_BYTES || new Uint8Array(buffer, 0, 1)[0] !== 0x7b)) return null
   if (named && buffer.byteLength > SHARE_FILE_MAX_BYTES) return 'invalid'
-  const payload = parseOwnedShareJson(new TextDecoder().decode(buffer))
+  const payload = parseJson(new TextDecoder().decode(buffer))
   if (payload !== null) return payload.species
   return named ? 'invalid' : null
 }
@@ -616,16 +716,29 @@ interface DropZoneProps {
   onBack: () => void
 }
 
+/**
+ * Dragging over a child of the zone fires `dragleave` on the zone itself, so a naive handler drops
+ * the highlight the instant the cursor crosses the text inside it and the border strobes. Only a
+ * `relatedTarget` outside the zone (or none at all — leaving the window) is a real exit.
+ */
+function leftZone(e: DragEvent<HTMLElement>): boolean {
+  const to = e.relatedTarget
+  return !(to instanceof Node) || !e.currentTarget.contains(to)
+}
+
 function DropZone({ dragging, hasList, onDragging, onFile, onDirectory, onBack }: DropZoneProps) {
   return (
     <div className="import-empty">
       <div
         className={`drop-zone${dragging ? ' drop-zone-over' : ''}`}
+        data-testid="drop-zone"
         onDragOver={(e) => {
           e.preventDefault()
           onDragging(true)
         }}
-        onDragLeave={() => onDragging(false)}
+        onDragLeave={(e) => {
+          if (leftZone(e)) onDragging(false)
+        }}
         // Only the highlight: the file itself is picked up by the dialog's drop handler, which this
         // bubbles to, so a drop lands exactly once wherever in the panel it happens.
         onDrop={() => onDragging(false)}
@@ -637,21 +750,25 @@ function DropZone({ dragging, hasList, onDragging, onFile, onDirectory, onBack }
       </div>
 
       <div className="import-actions">
-        <label className="file-btn" htmlFor="import-file">
+        {/*
+          The input lives inside its label rather than beside it: `.visually-hidden` keeps a focused
+          input off-screen, so a keyboard user tabbing to BROWSE… had no visible focus anywhere.
+          Nested, the label is the focus container and `:focus-within` can light it up.
+        */}
+        <label className="file-btn">
           BROWSE…
+          <input
+            className="visually-hidden"
+            type="file"
+            aria-label="choose a save file"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              // Cleared so re-picking the same file after a failure fires `change` again.
+              e.target.value = ''
+              if (file !== undefined) onFile(file)
+            }}
+          />
         </label>
-        <input
-          id="import-file"
-          className="visually-hidden"
-          type="file"
-          aria-label="choose a save file"
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            // Cleared so re-picking the same file after a failure fires `change` again.
-            e.target.value = ''
-            if (file !== undefined) onFile(file)
-          }}
-        />
         {onDirectory !== null && (
           <button type="button" className="file-btn" onClick={onDirectory}>
             FIND MY SAVE FOLDER

@@ -8,36 +8,16 @@ import {
   int64Prop,
   intProp,
   levelGvas,
-  nameArrayProp,
   nameProp,
   none,
   padProp,
+  stringArrayProp,
   strProp,
   structProp,
   type Writer,
 } from './fixtures/builder.ts'
 import { Cursor, eachProperty, openCharacterMap, readGvasHeader, readStringArray, type PropertyTag } from './gvas.ts'
-import { ParseError } from './types.ts'
-
-function codeOf(fn: () => unknown): string {
-  try {
-    fn()
-  } catch (error) {
-    if (error instanceof ParseError) return error.code
-    throw error
-  }
-  throw new Error('expected a ParseError')
-}
-
-function detailOf(fn: () => unknown): string {
-  try {
-    fn()
-  } catch (error) {
-    if (error instanceof ParseError) return error.message
-    throw error
-  }
-  throw new Error('expected a ParseError')
-}
+import { codeOfSync as codeOf, detailOfSync as detailOf } from './test-utils.ts'
 
 function patchU32(bytes: Uint8Array, offset: number, value: number): Uint8Array {
   const copy = bytes.slice()
@@ -97,7 +77,7 @@ describe('property skipping', () => {
       int64Prop(w, 'Exp', 987654321)
       floatProp(w, 'FullStomach', 150.5)
       boolProp(w, 'IsRarePal', true)
-      nameArrayProp(w, 'PassiveSkillList', ['PAL_ALLAttack_up2', 'Legend'])
+      stringArrayProp(w, 'PassiveSkillList', ['PAL_ALLAttack_up2', 'Legend'])
       structProp(
         w,
         'SlotID',
@@ -150,7 +130,7 @@ describe('property skipping', () => {
 
   it('reads a bare string array with no per-element tag', () => {
     const bytes = build((w: Writer) => {
-      nameArrayProp(w, 'PassiveSkillList', ['Legend', 'Swift'])
+      stringArrayProp(w, 'PassiveSkillList', ['Legend', 'Swift'])
       none(w)
     })
     const cur = new Cursor(bytes)

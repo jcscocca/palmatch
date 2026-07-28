@@ -44,15 +44,49 @@ export function Workbench({ shareBlob = null, onShareHandled }: WorkbenchProps) 
   const closePalette = useCallback(() => setPalette({ open: false, forSlot: null }), [])
 
   const [importOpen, setImportOpen] = useState(false)
+  /** Set only when a dragged file opened the panel, so it starts on the drop zone. */
+  const [importDropReady, setImportDropReady] = useState(false)
   useEffect(() => {
     if (shareBlob !== null) setImportOpen(true)
   }, [shareBlob])
   const closeImport = useCallback(() => {
     setImportOpen(false)
+    setImportDropReady(false)
     onShareHandled?.()
   }, [onShareHandled])
 
   const paletteOpen = palette.open
+
+  /**
+   * A file dropped anywhere but on an element that wants it is handled by the browser, which
+   * navigates the tab to the file — a 400 MB `Level.sav` rendered as a document, and the workbench
+   * gone with it. Both handlers exist to say "no" to that; the dragover one also takes the hint and
+   * opens MY PALS on its drop zone, so the drag ends somewhere useful. The dialog fills the
+   * viewport, so once it is up the drop lands on it.
+   */
+  useEffect(() => {
+    const carriesFile = (e: globalThis.DragEvent): boolean => e.dataTransfer?.types.includes('Files') === true
+    const onDragOver = (e: globalThis.DragEvent): void => {
+      if (!carriesFile(e)) return
+      e.preventDefault()
+      // A dialog already up owns the screen: the import panel needs no help, and yanking the search
+      // palette away mid-drag would be a worse surprise than the drag doing nothing.
+      if (!paletteOpen && !importOpen) {
+        setImportDropReady(true)
+        setImportOpen(true)
+      }
+    }
+    const onDrop = (e: globalThis.DragEvent): void => {
+      if (carriesFile(e)) e.preventDefault()
+    }
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [importOpen, paletteOpen])
+
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent): void => {
       if (e.key === 'Escape') {
@@ -88,7 +122,10 @@ export function Workbench({ shareBlob = null, onShareHandled }: WorkbenchProps) 
           <button
             type="button"
             className={`search-btn${ownedSpecies > 0 ? ' search-btn-on' : ''}`}
-            onClick={() => setImportOpen(true)}
+            onClick={() => {
+              setImportDropReady(false)
+              setImportOpen(true)
+            }}
           >
             MY PALS{ownedSpecies > 0 ? ` · ${ownedSpecies}` : ''}
           </button>
@@ -140,7 +177,7 @@ export function Workbench({ shareBlob = null, onShareHandled }: WorkbenchProps) 
 
       {/* Mounted only while open so each opening starts from a blank query and filters. */}
       {palette.open && <SearchPalette forSlot={palette.forSlot} onClose={closePalette} />}
-      {importOpen && <ImportPanel shareBlob={shareBlob} onClose={closeImport} />}
+      {importOpen && <ImportPanel shareBlob={shareBlob} dropReady={importDropReady} onClose={closeImport} />}
     </div>
   )
 }

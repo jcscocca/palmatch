@@ -1,9 +1,10 @@
-import { Inflate } from 'pako'
+import { BoundedInflateError, boundedInflate } from '../lib/bounded-inflate.ts'
 import { loadOoz, type OozDecompress } from './ooz.ts'
 import { ParseError } from './types.ts'
 
 /**
- * The outer `.sav` container (reference §1): a 12-byte header, then a compressed GVAS blob.
+ * The outer `.sav` container, per §1 of `docs/superpowers/reference/save-format.md` (cited as
+ * "reference" throughout this module): a 12-byte header, then a compressed GVAS blob.
  *
  * ```
  * 0  u32 uncompressedLen   4  u32 compressedLen   8  ascii magic   11  u8 saveType
@@ -87,49 +88,27 @@ export function sniffWrapper(bytes: Uint8Array): SaveWrapper {
 }
 
 /**
- * One zlib pass, refusing to expand past `limit` bytes.
- *
- * The bound matters: a zlib stream can expand ~1000x, so a one-shot `inflate()` would let a corrupt
- * or hostile file allocate tens of GB and kill the worker outright, before any of the header's
- * length checks could run. The check therefore lives *inside* pako's output callback, which is the
- * only place that sees each block as it is produced — checking between `push()` calls would let a
- * whole slice of input expand first. pako hands us output in `chunkSize` blocks (64 KiB by
- * default) and has no try/catch around the callback, so throwing here stops the decode with at
- * most one block of overshoot past the limit.
+ * One bounded zlib pass, in this module's vocabulary. The streaming limit itself lives in
+ * `lib/bounded-inflate.ts`, shared with the owned-list share codec — both inflate bytes an
+ * adversary chose, and a decompression bomb is the same hazard in both places. All this adds is the
+ * translation: a stream that won't decode and a stream that won't stop are both statements about
+ * the file, so both land on `truncated`, with the pass named so the detail is actionable.
  *
  * `limit` is a length the save's own header declares and `sniffWrapper` has already bounded, so a
  * well-formed file never comes near it.
  */
 function inflateOnce(data: Uint8Array, limit: number, pass: string): Uint8Array {
-  const inflator = new Inflate()
-  const chunks: Uint8Array[] = []
-  let total = 0
-  inflator.onData = (chunk) => {
-    total += chunk.length
-    if (total > limit) {
-      throw new ParseError(
-        'truncated',
-        `the ${pass} zlib stream expands past the ${limit} bytes the save's header declares (stopped after ${total}) — the file is corrupt`,
-      )
-    }
-    chunks.push(chunk)
-  }
-
-  inflator.push(data, true)
-  if (inflator.err !== 0) {
+  try {
+    return boundedInflate(data, limit)
+  } catch (cause) {
+    if (!(cause instanceof BoundedInflateError)) throw cause
     throw new ParseError(
       'truncated',
-      `the ${pass} zlib stream would not decompress (${inflator.msg}) — the file looks corrupt or incomplete`,
+      cause.reason === 'overflow'
+        ? `the ${pass} zlib stream expands past the ${limit} bytes the save's header declares (stopped after ${cause.produced}) — the file is corrupt`
+        : `the ${pass} zlib stream would not decompress (${cause.message}) — the file looks corrupt or incomplete`,
     )
   }
-
-  const out = new Uint8Array(total)
-  let at = 0
-  for (const chunk of chunks) {
-    out.set(chunk, at)
-    at += chunk.length
-  }
-  return out
 }
 
 /**

@@ -1,5 +1,6 @@
 import type { StoreApi, UseBoundStore } from 'zustand'
 import type { PalRecord } from '../engine/types.ts'
+import { buildLowerLookup } from '../lib/lower-lookup.ts'
 import { isTabId, modeFor, normalizeSlots } from './store.ts'
 import type { TabId, WorkbenchState } from './store.ts'
 
@@ -98,13 +99,6 @@ export function encodeState(s: UrlState, pals: PalRecord[]): string {
   if (s.target === null) throw new Error('encodeState: chain mode without a target')
   const rest = secondary !== null ? `+${idOf(pals, secondary)}` : ''
   return `#/c/${idOf(pals, primary)}${rest}~${idOf(pals, s.target)}${tabSuffix}`
-}
-
-/** Builds a lowercase-id -> index lookup once per parse; `byId` itself is keyed by exact case. */
-function buildLowerLookup(byId: Map<string, number>): Map<string, number> {
-  const lower = new Map<string, number>()
-  for (const [id, index] of byId) lower.set(id.toLowerCase(), index)
-  return lower
 }
 
 function resolve(lower: Map<string, number>, id: string, warnings: string[]): number | null {

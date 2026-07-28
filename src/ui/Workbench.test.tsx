@@ -129,13 +129,76 @@ describe('MY PALS header button', () => {
     expect(screen.getByText('MY PALS · 2')).toBeTruthy()
   })
 
-  it('opens straight onto the confirm step for a #/own/ share link', () => {
+  it('opens straight onto the confirm step for a #/own/ share link', async () => {
     render(
       <DatasetContext value={ds}>
         <Workbench shareBlob="not-a-real-blob" />
       </DatasetContext>,
     )
     expect(screen.queryByLabelText('my pals')).not.toBeNull()
-    expect(screen.getByText(/shared list is damaged/)).toBeTruthy()
+    // Awaited: the blob is decoded by the lazily-imported share codec, not on the first render.
+    await screen.findByText(/shared list is damaged/)
+  })
+})
+
+describe('page-wide file drag', () => {
+  /** A drag carrying a file, as the browser reports it. */
+  function fileDrag(): { dataTransfer: { types: string[]; files: File[] } } {
+    return { dataTransfer: { types: ['Files'], files: [new File(['x'], 'Level.sav')] } }
+  }
+
+  it('opens MY PALS on its drop zone when a file is dragged anywhere on the page', () => {
+    renderWorkbench()
+    expect(screen.queryByLabelText('my pals')).toBeNull()
+
+    fireEvent.dragOver(window, fileDrag())
+
+    expect(screen.queryByLabelText('my pals')).not.toBeNull()
+    expect(screen.getByTestId('drop-zone')).toBeTruthy()
+  })
+
+  it('opens on the drop zone even when a list already exists', () => {
+    useOwnedStore.getState().loadShared([[1, 4]], 'mine')
+    renderWorkbench()
+
+    fireEvent.dragOver(window, fileDrag())
+    expect(screen.getByTestId('drop-zone')).toBeTruthy()
+  })
+
+  it('swallows the drop so the browser cannot navigate the tab to the save', () => {
+    renderWorkbench()
+    // Left to the browser, a dropped .sav replaces the page with the raw file and the app is gone.
+    expect(fireEvent.drop(window, fileDrag())).toBe(false)
+    expect(fireEvent.dragOver(window, fileDrag())).toBe(false)
+  })
+
+  it('leaves a drag that carries no file alone', () => {
+    renderWorkbench()
+    const textDrag = { dataTransfer: { types: ['text/plain'], files: [] } }
+
+    expect(fireEvent.dragOver(window, textDrag)).toBe(true)
+    expect(screen.queryByLabelText('my pals')).toBeNull()
+  })
+
+  it('does not yank the search palette away mid-drag', () => {
+    renderWorkbench()
+    fireEvent.keyDown(window, { key: '/' })
+
+    fireEvent.dragOver(window, fileDrag())
+
+    expect(palette()).not.toBeNull()
+    expect(screen.queryByLabelText('my pals')).toBeNull()
+  })
+
+  it('goes back to the summary the next time MY PALS is opened by hand', () => {
+    useOwnedStore.getState().loadShared([[1, 4]], 'mine')
+    renderWorkbench()
+
+    fireEvent.dragOver(window, fileDrag())
+    fireEvent.keyDown(window, { key: 'Escape' })
+    fireEvent.click(screen.getByText('MY PALS · 1'))
+
+    expect(screen.queryByTestId('drop-zone')).toBeNull()
+    expect(screen.getByText(/1 species · 4 pals/)).toBeTruthy()
   })
 })

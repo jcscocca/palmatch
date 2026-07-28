@@ -148,6 +148,23 @@ describe('ChainView', () => {
     expect(screen.queryByText(/raise depth/)).toBeNull()
   })
 
+  it('gives owned-list starters advice they can act on when no path is found', async () => {
+    // Same strict search, different advice: a player chaining from their whole palbox cannot
+    // "pick differently", so telling them to swap a starter they never picked is useless.
+    own('Lamball', 'Chikipi')
+    useWorkbenchStore.getState().setSlot('t', idx('Relaxaurus Lux'))
+    show()
+
+    const worker = await pending()
+    worker.reply({ ok: true, requestId: worker.posted[0].requestId, steps: null })
+
+    const depth = useWorkbenchStore.getState().chainDepth
+    expect(
+      screen.getByText(`no path within ${depth} breeds from the pals you own — raise depth, catch more species, or add a starter`),
+    ).toBeTruthy()
+    expect(screen.queryByText(/ONLY the pals you selected/)).toBeNull()
+  })
+
   it('offers a depth bump when a single starter finds no path', async () => {
     useWorkbenchStore.getState().setSlot('a', idx('Lamball'))
     useWorkbenchStore.getState().setSlot('t', idx('Relaxaurus Lux'))

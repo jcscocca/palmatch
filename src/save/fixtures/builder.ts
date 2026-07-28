@@ -10,6 +10,14 @@ import { deflate } from 'pako'
  * in `character.test.ts`, which pins one fixture against a hand-computed hex literal derived from
  * the reference doc rather than from this file — if the two ever disagree, one of them is wrong.
  *
+ * **What that defence does not cover**, named so nobody mistakes a green suite for a verified
+ * format: the golden hex pins the `RawData` property tree only. The outer wrapper header (§1) and
+ * the GVAS header framing (§2) are written here and read by the parser from the same reading of the
+ * same document, so a shared misreading of either would round-trip silently — `gvas.test.ts`'s
+ * hand-computed header offsets narrow that but are themselves derived from the doc. The `PlM1`
+ * payload is arbitrary bytes, so nothing here exercises real Oodle at all. All three are pinned for
+ * real only by F6's run against an actual `Level.sav`.
+ *
  * Nothing here imports the parser; it is written from the spec, independently.
  */
 
@@ -155,7 +163,7 @@ export function boolProp(w: Writer, name: string, value: boolean): void {
   prop(w, name, 'BoolProperty', (e) => void e.u8(value ? 1 : 0).u8(0), new Uint8Array(0))
 }
 
-export function nameArrayProp(w: Writer, name: string, values: string[], innerType = 'NameProperty'): void {
+export function stringArrayProp(w: Writer, name: string, values: string[], innerType = 'NameProperty'): void {
   prop(
     w,
     name,
@@ -277,7 +285,7 @@ export function characterRawData(spec: PalSpec = {}): Uint8Array {
     if (characterId !== null) nameProp(b, 'CharacterID', characterId)
     if (gender !== null) enumProp(b, 'Gender', 'EPalGenderType', `EPalGenderType::${gender}`)
     if (nickName !== null) strProp(b, 'NickName', nickName, true)
-    if (passives !== null) nameArrayProp(b, 'PassiveSkillList', passives)
+    if (passives !== null) stringArrayProp(b, 'PassiveSkillList', passives)
     if (talents?.hp !== undefined) number(b, 'Talent_HP', talents.hp)
     if (talents?.shot !== undefined) number(b, 'Talent_Shot', talents.shot)
     if (talents?.defense !== undefined) number(b, 'Talent_Defense', talents.defense)
@@ -296,7 +304,7 @@ export function characterRawData(spec: PalSpec = {}): Uint8Array {
           none(s)
         }),
       )
-      nameArrayProp(b, 'MasteredWaza', ['EPalWazaID::PowerShot'], 'EnumProperty')
+      stringArrayProp(b, 'MasteredWaza', ['EPalWazaID::PowerShot'], 'EnumProperty')
       structArrayProp(
         b,
         'GotStatusPointList',

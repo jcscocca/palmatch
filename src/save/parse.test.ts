@@ -1,8 +1,10 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { loadDatasetFromDisk } from '../engine/dataset.ts'
 import type { Dataset } from '../engine/types.ts'
+import { buildLowerLookup } from '../lib/lower-lookup.ts'
 import { cnk0, junkFile, levelGvas, plm1, plz1, plz2, truncateTo, type PalSpec } from './fixtures/builder.ts'
 import { MAX_SAVE_BYTES, parseSave } from './parse.ts'
+import { codeOf, detailOf } from './test-utils.ts'
 import { ParseError, type ImportResult } from './types.ts'
 
 let ds: Dataset
@@ -11,33 +13,13 @@ let byIdLower: Map<string, number>
 /** The species ids are real, so the fixtures exercise the same lookup the app will. */
 beforeAll(async () => {
   ds = await loadDatasetFromDisk('public/data')
-  byIdLower = new Map([...ds.byId].map(([id, index]) => [id.toLowerCase(), index]))
+  byIdLower = buildLowerLookup(ds.byId)
 })
 
 function idx(id: string): number {
   const index = byIdLower.get(id.toLowerCase())
   if (index === undefined) throw new Error(`unknown pal: ${id}`)
   return index
-}
-
-async function codeOf(promise: Promise<unknown>): Promise<string> {
-  try {
-    await promise
-  } catch (error) {
-    if (error instanceof ParseError) return error.code
-    throw error
-  }
-  throw new Error('expected a ParseError, got a successful parse')
-}
-
-async function detailOf(promise: Promise<unknown>): Promise<string> {
-  try {
-    await promise
-  } catch (error) {
-    if (error instanceof ParseError) return error.message
-    throw error
-  }
-  throw new Error('expected a ParseError, got a successful parse')
 }
 
 const WORLD: PalSpec[] = [
@@ -59,7 +41,8 @@ describe('parseSave', () => {
     const result = await parse(plz1(levelGvas({ pals: WORLD })))
 
     expect(result.palCount).toBe(3)
-    expect(result.nonPalRows).toBe(1)
+    expect(result.playerRows).toBe(1)
+    expect(result.unreadableRows).toBe(0)
     expect(result.unknownSpecies).toEqual([])
     expect(result.owned).toEqual([
       {
@@ -96,6 +79,7 @@ describe('parseSave', () => {
 
     expect(result.owned.map((p) => p.speciesIndex)).toEqual([idx('SheepBall')])
     expect(result.unknownSpecies).toEqual(['GYM_ThunderDragonMan', 'NewPalFrom2027'])
+    expect(result.unknownPals).toBe(3)
     expect(result.palCount).toBe(4)
     // Three pals lost to two species — the warning counts pals, since that's what the user missed.
     expect(result.warnings).toEqual(["left out 3 pals whose species palmatch doesn't know: GYM_ThunderDragonMan, NewPalFrom2027"])
@@ -112,6 +96,12 @@ describe('parseSave', () => {
 
     expect(result.owned).toHaveLength(2)
     expect(result.owned.map((p) => p.talents)).toEqual([null, null])
+    // Structured as well as prose: anything but a `<p>` should be reading these.
+    expect(result.oddTypes).toEqual([
+      'Talent_Defense (FloatProperty)',
+      'Talent_HP (FloatProperty)',
+      'Talent_Shot (FloatProperty)',
+    ])
     expect(result.warnings).toEqual([
       "this save stores Talent_Defense (FloatProperty), Talent_HP (FloatProperty), Talent_Shot (FloatProperty) in a form palmatch doesn't recognise, so those IVs were left blank",
     ])
@@ -124,7 +114,27 @@ describe('parseSave', () => {
 
   it('handles a world with no pals in it', async () => {
     const result = await parse(plz1(levelGvas({ pals: [] })))
-    expect(result).toEqual({ owned: [], unknownSpecies: [], nonPalRows: 0, palCount: 0, warnings: [] })
+    expect(result).toEqual({
+      owned: [],
+      unknownSpecies: [],
+      unknownPals: 0,
+      oddTypes: [],
+      playerRows: 0,
+      unreadableRows: 0,
+      palCount: 0,
+      warnings: [],
+    })
+  })
+
+  it('counts a row with no CharacterID as unreadable, not as a player', async () => {
+    // The two used to be one `nonPalRows` tally, which made "guild of N players" a guess. A row
+    // with neither an id nor an IsPlayer flag is a damaged row, and says nothing about the guild.
+    const result = await parse(
+      plz1(levelGvas({ pals: [{ characterId: 'SheepBall' }, { characterId: null }, { characterId: null, isPlayer: true }] })),
+    )
+    expect(result.palCount).toBe(1)
+    expect(result.playerRows).toBe(1)
+    expect(result.unreadableRows).toBe(1)
   })
 
   it('reads 200 entries with the counts intact', async () => {
@@ -223,7 +233,9 @@ describe('parseSave on corrupted saves', () => {
         // "RawData" itself leaves an entry we can't read. What it must never do is produce a row
         // the fixture didn't encode, or a pal whose contents are noise dressed up as data.
         expect(result.palCount).toBeLessThanOrEqual(ENCODED_PALS)
-        expect(result.palCount + result.nonPalRows).toBeLessThanOrEqual(WORLD.length)
+        // Every row the map declared is in exactly one of the three tallies, damaged or not — a
+        // corrupted entry becomes unreadable, it does not vanish from the arithmetic.
+        expect(result.palCount + result.playerRows + result.unreadableRows).toBeLessThanOrEqual(WORLD.length)
         for (const pal of result.owned) {
           expect(ds.pals[pal.speciesIndex]).toBeDefined()
           for (const iv of Object.values(pal.talents ?? {})) {

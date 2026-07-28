@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
-import { ownedCount, useOwnedStore } from '../../state/owned.ts'
+import { hasOwnedFor, useOwnedStore } from '../../state/owned.ts'
 import { modeFor, useWorkbenchStore } from '../../state/store.ts'
 import { useDataset } from '../dataset-context.ts'
 import { TAB_LABELS, activeTabFor, tabsFor } from '../tabs.ts'
@@ -33,7 +33,7 @@ export function ResultTabs() {
   const setTab = useWorkbenchStore((s) => s.setTab)
   const bySpecies = useOwnedStore((s) => s.bySpecies)
 
-  const hasOwned = useMemo(() => ownedCount(bySpecies) > 0, [bySpecies])
+  const hasOwned = useMemo(() => hasOwnedFor(bySpecies, ds.pals.length), [bySpecies, ds.pals.length])
   const mode = modeFor({ slotA, slotB, target })
   // Memoized because the owned case builds a fresh array, which the effect below depends on.
   const tabs = useMemo(() => tabsFor(mode, hasOwned), [hasOwned, mode])

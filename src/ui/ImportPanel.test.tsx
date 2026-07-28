@@ -5,7 +5,8 @@ import type { Dataset } from '../engine/types.ts'
 import { levelGvas, plz1 } from '../save/fixtures/builder.ts'
 import { MAX_SAVE_BYTES } from '../save/parse.ts'
 import type { ImportResult, OwnedPal, ParseErrorCode, SaveImportRequest, SaveImportResponse } from '../save/types.ts'
-import { encodeOwnedShare, shareJson, useOwnedStore } from '../state/owned.ts'
+import { encodeOwnedShare, shareJson } from '../state/owned-share.ts'
+import { useOwnedStore } from '../state/owned.ts'
 import type { OwnedBySpecies } from '../state/owned.ts'
 import { DatasetContext } from './dataset-context.ts'
 import { ImportPanel, MAX_FILE_BYTES } from './ImportPanel.tsx'
@@ -86,8 +87,17 @@ function ownedPal(speciesIndex: number): OwnedPal {
   return { speciesIndex, gender: 'F', passives: ['Swift'], talents: null }
 }
 
-function importResult(owned: OwnedPal[], warnings: string[] = []): ImportResult {
-  return { owned, unknownSpecies: [], nonPalRows: 1, palCount: owned.length, warnings }
+function importResult(owned: OwnedPal[], warnings: string[] = [], playerRows = 0): ImportResult {
+  return {
+    owned,
+    unknownSpecies: [],
+    unknownPals: 0,
+    oddTypes: [],
+    playerRows,
+    unreadableRows: 0,
+    palCount: owned.length,
+    warnings,
+  }
 }
 
 beforeAll(async () => {
@@ -107,21 +117,23 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function show(props: { shareBlob?: string | null } = {}): { onClose: () => void } {
+function show(props: { shareBlob?: string | null; dropReady?: boolean } = {}): { onClose: () => void } {
   const onClose = vi.fn()
   render(
     <DatasetContext value={ds}>
-      <ImportPanel onClose={onClose} shareBlob={props.shareBlob ?? null} />
+      <ImportPanel onClose={onClose} shareBlob={props.shareBlob ?? null} dropReady={props.dropReady ?? false} />
     </DatasetContext>,
   )
   return { onClose }
 }
 
-/** The zone itself is a plain div; the file name inside it is the one exact-text handle on it. */
+/**
+ * The zone is a plain div with nothing an accessibility query can hold onto, so it carries a
+ * `data-testid`. Reaching it through the words inside it, as this used to, made every test that
+ * only wanted "is the drop zone showing?" break the day the copy changed.
+ */
 function dropZone(): HTMLElement {
-  const zone = screen.getByText('Level.sav').closest('.drop-zone')
-  expect(zone).not.toBeNull()
-  return zone as HTMLElement
+  return screen.getByTestId('drop-zone')
 }
 
 function drop(file: File): void {
@@ -139,6 +151,47 @@ async function posted(): Promise<FakeWorker> {
 describe('ImportPanel', () => {
   it('agrees with the parser about the size cap it enforces on its behalf', () => {
     expect(MAX_FILE_BYTES).toBe(MAX_SAVE_BYTES)
+  })
+
+  it('names every control it offers, and puts the real file input inside its own label', () => {
+    // Same shell as SearchPalette: a named dialog, a named close button, and no control whose only
+    // identity is a glyph. The file input is `.visually-hidden`, so nesting it inside the BROWSE…
+    // label is what gives a keyboard user something that lights up when they tab to it.
+    show()
+    expect(screen.getByLabelText('my pals').tagName).toBe('DIALOG')
+    expect(screen.getByLabelText('close my pals')).toBeTruthy()
+
+    const input = screen.getByLabelText('choose a save file')
+    expect(input.closest('label')?.textContent).toContain('BROWSE…')
+    expect(input.classList.contains('visually-hidden')).toBe(true)
+  })
+
+  it('restores focus to whatever opened it', () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+
+    show()
+    cleanup()
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
+  })
+
+  it('announces a failure as an alert and a share confirmation as a status', async () => {
+    show()
+    drop(saveFile())
+    const worker = await posted()
+    worker.reply({ ok: false, requestId: worker.posted[0].requestId, code: 'not-a-save', detail: 'too short' })
+    expect(screen.getByRole('alert').textContent).toContain('IMPORT FAILED')
+
+    cleanup()
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    vi.spyOn(window, 'prompt').mockReturnValue(null)
+    useOwnedStore.getState().loadShared([[2, 3]], 'mine')
+    show()
+    fireEvent.click(screen.getByText('SHARE'))
+    // A status rather than an alert: the copy worked, it just needs saying — politely.
+    expect(screen.getByRole('status').textContent).toBe('copy the link from the box')
   })
 
   it('sends a dropped save to the worker and renders the counts it comes back with', async () => {
@@ -267,6 +320,142 @@ describe('ImportPanel', () => {
     expect(worker.terminated).toBe(true)
   })
 
+  it('retires the worker once it has answered, rather than holding its wasm heap open', async () => {
+    show()
+    drop(saveFile())
+    const worker = await posted()
+
+    worker.reply({ ok: true, requestId: worker.posted[0].requestId, result: importResult([ownedPal(idx('Lamball'))]) })
+
+    // The protocol is one answer per request, and a finished worker still owns tens of MB of wasm
+    // linear memory for as long as the player sits on the summary.
+    expect(worker.terminated).toBe(true)
+    expect(screen.getByText(/1 species · 1 pal/)).toBeTruthy()
+  })
+
+  it('terminates its worker after a failure too', async () => {
+    show()
+    drop(saveFile())
+    const worker = await posted()
+
+    worker.reply({ ok: false, requestId: worker.posted[0].requestId, code: 'skip-drift', detail: 'lost at offset 9' })
+    expect(worker.terminated).toBe(true)
+  })
+
+  it('kills the first parse when a second file is dropped on top of it', async () => {
+    show()
+    drop(saveFile('one.sav'))
+    const first = await posted()
+
+    // A second file dropped on the dialog while the first is still parsing — the drop handler is
+    // live in every panel state, which is what makes this reachable at all.
+    fireEvent.drop(screen.getByLabelText('my pals'), { dataTransfer: { files: [saveFile('two.sav')] } })
+
+    await waitFor(() => expect(workers).toHaveLength(2))
+    expect(first.terminated).toBe(true)
+    expect(workers[1].terminated).toBe(false)
+
+    // And the abandoned parse's answer is not rendered when it arrives late.
+    first.reply({ ok: true, requestId: first.posted[0].requestId, result: importResult([ownedPal(idx('Lamball'))]) })
+    expect(useOwnedStore.getState().importedAt).toBeNull()
+  })
+
+  it('discards a save parse that lands after a shared list was applied over it', async () => {
+    const list: OwnedBySpecies = { 4: { count: 3, individuals: [] } }
+    show()
+    drop(saveFile())
+    const worker = await posted()
+
+    // A `.palmatch.json` dropped while the save is still parsing. Without the abort, the save's
+    // result would arrive seconds later and silently replace the list the player just chose.
+    fireEvent.drop(screen.getByLabelText('my pals'), {
+      dataTransfer: { files: [new File([shareJson(list)], 'my-pals.palmatch.json')] },
+    })
+    await waitFor(() => expect(useOwnedStore.getState().bySpecies[4].count).toBe(3))
+    expect(worker.terminated).toBe(true)
+
+    worker.reply({ ok: true, requestId: worker.posted[0].requestId, result: importResult([ownedPal(idx('Lamball'))]) })
+    expect(useOwnedStore.getState().bySpecies).toEqual(list)
+  })
+
+  it('gives up on a worker that never answers, and takes it down with it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      show()
+      drop(saveFile())
+      const worker = await posted()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000)
+      })
+
+      expect(screen.getByText(/did not finish within 60 seconds/)).toBeTruthy()
+      expect(screen.getByText('Level.sav was still parsing after 60 seconds')).toBeTruthy()
+      // A worker that missed its deadline is still chewing on the old question; leaving it alive
+      // would make the retry queue behind it.
+      expect(worker.terminated).toBe(true)
+      expect(useOwnedStore.getState().importedAt).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not time out a parse that answered in time', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      show()
+      drop(saveFile())
+      const worker = await posted()
+      worker.reply({ ok: true, requestId: worker.posted[0].requestId, result: importResult([ownedPal(idx('Lamball'))]) })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000)
+      })
+      expect(screen.queryByText(/did not finish within 60 seconds/)).toBeNull()
+      expect(screen.getByText(/1 species · 1 pal/)).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('opens straight on the drop zone when a file was dragged onto the page', () => {
+    useOwnedStore.getState().loadShared([[2, 3]], 'mine')
+    show({ dropReady: true })
+
+    // Without this the panel would open on the summary and the file in the player's hand would
+    // have nowhere obvious to land.
+    expect(dropZone()).toBeTruthy()
+    expect(screen.queryByText(/1 species · 3 pals/)).toBeNull()
+  })
+
+  it('says how many players share the world the list came from', async () => {
+    show()
+    drop(saveFile())
+    const worker = await posted()
+    worker.reply({
+      ok: true,
+      requestId: worker.posted[0].requestId,
+      result: importResult([ownedPal(idx('Lamball'))], [], 3),
+    })
+
+    expect(screen.getByText('1 species · 1 pal · guild of 3 players · from Level.sav')).toBeTruthy()
+  })
+
+  it('totals the species it can actually render, not everything in the store', async () => {
+    // A list from a newer build: 500 pals of a species this paldex has never heard of. Counting
+    // them in the headline would advertise a total the grid underneath cannot account for.
+    useOwnedStore.getState().loadShared(
+      [
+        [2, 3],
+        [ds.pals.length + 40, 500],
+      ],
+      'a newer build',
+    )
+    show()
+
+    expect(screen.getByText('1 species · 3 pals · from a newer build')).toBeTruthy()
+  })
+
   it('imports a .palmatch.json list without going near the worker', async () => {
     const list: OwnedBySpecies = { 4: { count: 3, individuals: [] }, 9: { count: 1, individuals: [] } }
     show()
@@ -291,7 +480,8 @@ describe('ImportPanel', () => {
     it('asks before replacing the current list, then loads it', async () => {
       show({ shareBlob: encodeOwnedShare(shared) })
 
-      expect(screen.getByText('Load shared list — 2 species? Replaces your current list.')).toBeTruthy()
+      // Awaited, not immediate: the codec that decodes the blob is a lazy chunk (see `loadCodec`).
+      await screen.findByText('Load shared list — 2 species? Replaces your current list.')
       expect(useOwnedStore.getState().importedAt).toBeNull()
 
       fireEvent.click(screen.getByText('LOAD'))
@@ -302,29 +492,31 @@ describe('ImportPanel', () => {
       expect(screen.getByText(/2 species · 6 pals/)).toBeTruthy()
     })
 
-    it('leaves the current list alone when the confirm is cancelled', () => {
+    it('leaves the current list alone when the confirm is cancelled', async () => {
       useOwnedStore.getState().loadShared([[1, 1]], 'mine')
       const { onClose } = show({ shareBlob: encodeOwnedShare(shared) })
 
-      fireEvent.click(screen.getByText('CANCEL'))
+      fireEvent.click(await screen.findByText('CANCEL'))
       expect(onClose).toHaveBeenCalled()
       expect(useOwnedStore.getState().bySpecies).toEqual({ 1: { count: 1, individuals: [] } })
     })
 
-    it('says so when the link is damaged, instead of importing half of it', () => {
+    it('says so when the link is damaged, instead of importing half of it', async () => {
       show({ shareBlob: 'this-is-not-a-blob' })
-      expect(screen.getByText(/shared list is damaged/)).toBeTruthy()
+      await screen.findByText(/shared list is damaged/)
       expect(useOwnedStore.getState().importedAt).toBeNull()
     })
 
-    it('leaves out species this build has never heard of, and says how many', () => {
+    it('leaves out species this build has never heard of, and says how many', async () => {
       const stale: OwnedBySpecies = { 2: { count: 1, individuals: [] }, 5000: { count: 1, individuals: [] } }
       show({ shareBlob: encodeOwnedShare(stale) })
 
-      expect(screen.getByText(/1 more species in that link are unknown/)).toBeTruthy()
+      await screen.findByText(/1 more species in that link are unknown/)
       fireEvent.click(screen.getByText('LOAD'))
       expect(useOwnedStore.getState().bySpecies).toEqual({ 2: { count: 1, individuals: [] } })
       expect(screen.getByText('1 species · 1 pal · from shared list')).toBeTruthy()
+      // The count the confirm step already made was carried through rather than re-derived.
+      expect(screen.getByText(/1 species in that list are unknown to this version and were left out/)).toBeTruthy()
     })
   })
 
@@ -425,6 +617,75 @@ describe('ImportPanel', () => {
     fireEvent.click(screen.getByText('FIND MY SAVE FOLDER'))
     const worker = await posted()
     expect(worker.posted[0].buffer.byteLength).toBe(saveBytes().byteLength)
+  })
+
+  it('asks which world when a SaveGames folder holds several, biggest first', async () => {
+    // The real shape: `SaveGames/<steam-id>/<world-id>/Level.sav`, two levels below what the player
+    // picks. Guessing at one of them would quietly import the wrong world.
+    const world = (name: string, size: number) => ({
+      kind: 'directory' as const,
+      name,
+      values: async function* () {
+        const file = saveFile()
+        Object.defineProperty(file, 'size', { value: size })
+        yield { kind: 'file' as const, name: 'Level.sav', getFile: () => Promise.resolve(file) }
+      },
+    })
+    const steamId = {
+      kind: 'directory' as const,
+      name: '76561198000000000',
+      values: async function* () {
+        yield world('small-world', 2 * 1024 * 1024)
+        yield world('big-world', 300 * 1024 * 1024)
+      },
+    }
+    vi.stubGlobal('showDirectoryPicker', () =>
+      Promise.resolve({
+        kind: 'directory' as const,
+        name: 'SaveGames',
+        values: async function* () {
+          yield steamId
+        },
+      }),
+    )
+    show()
+
+    fireEvent.click(screen.getByText('FIND MY SAVE FOLDER'))
+    await screen.findByText('2 saves in that folder — which world?')
+
+    const paths = screen.getAllByText(/world\/Level\.sav$/).map((el) => el.textContent)
+    // Biggest first, and the path is the full breadcrumb from what they picked, so two worlds with
+    // the same folder name are still tellable apart.
+    expect(paths).toEqual([
+      '76561198000000000/big-world/Level.sav',
+      '76561198000000000/small-world/Level.sav',
+    ])
+    expect(screen.getByText('300 MB')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('76561198000000000/big-world/Level.sav'))
+    expect((await posted()).posted[0].buffer.byteLength).toBe(saveBytes().byteLength)
+  })
+
+  it('stops walking rather than searching a whole home directory', async () => {
+    // A player who picks `~` by mistake must get a quick "nothing here", not a full-disk crawl.
+    // `Level.sav` is planted three levels down, past MAX_WALK_DEPTH, so it is never reached.
+    let visited = 0
+    const branch = (depth: number): { kind: 'directory'; name: string; values: () => AsyncGenerator<never> } => ({
+      kind: 'directory',
+      name: `dir-${depth}`,
+      values: async function* () {
+        visited++
+        for (let i = 0; i < 8; i++) yield branch(depth + 1) as never
+      },
+    })
+    vi.stubGlobal('showDirectoryPicker', () => Promise.resolve(branch(0)))
+    show()
+
+    fireEvent.click(screen.getByText('FIND MY SAVE FOLDER'))
+    await waitFor(() => expect(screen.getByText(/no Level\.sav in that folder/)).toBeTruthy())
+    // MAX_WALK_DEPTH = 2 and MAX_DIRECTORIES = 64: 1 + 8 + 64 would be the unbounded shape, and the
+    // directory budget is what actually stops it.
+    expect(visited).toBeLessThanOrEqual(64)
   })
 
   it('says so when the chosen folder holds no save at all', async () => {
