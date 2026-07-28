@@ -233,8 +233,10 @@ describe('parseSave on corrupted saves', () => {
         // "RawData" itself leaves an entry we can't read. What it must never do is produce a row
         // the fixture didn't encode, or a pal whose contents are noise dressed up as data.
         expect(result.palCount).toBeLessThanOrEqual(ENCODED_PALS)
-        // Every row the map declared is in exactly one of the three tallies, damaged or not — a
-        // corrupted entry becomes unreadable, it does not vanish from the arithmetic.
+        // Every row reached is in one of the three tallies, damaged or not — a corrupted entry
+        // becomes unreadable rather than vanishing from the arithmetic. Bounded rather than equal
+        // because a flipped bit in the map's own entry count makes the walk stop early, so the
+        // three can sum to fewer rows than the fixture wrote; they must never sum to more.
         expect(result.palCount + result.playerRows + result.unreadableRows).toBeLessThanOrEqual(WORLD.length)
         for (const pal of result.owned) {
           expect(ds.pals[pal.speciesIndex]).toBeDefined()

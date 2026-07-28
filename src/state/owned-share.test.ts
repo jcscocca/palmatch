@@ -47,6 +47,10 @@ describe('share codec', () => {
     ['a payload from another version', blobOf('{"v":9,"species":[[3,2]]}')],
     ['a negative species index', blobOf('{"v":1,"species":[[-1,2]]}')],
     ['a zero count', blobOf('{"v":1,"species":[[3,0]]}')],
+    // `Number.isInteger` says yes to both of these; `isSafeInteger` is what refuses them, and the
+    // store's `validateStored` refuses them the same way.
+    ['a count past the safe-integer range', blobOf('{"v":1,"species":[[3,1e21]]}')],
+    ['a species index past the safe-integer range', blobOf('{"v":1,"species":[[1e21,3]]}')],
     ['bytes that are not UTF-8 text', blobOf(new Uint8Array([0xff, 0xfe, 0xff, 0xfe]))],
   ])('decodes %s to null instead of throwing', (_label, blob) => {
     expect(() => decodeOwnedShare(blob)).not.toThrow()

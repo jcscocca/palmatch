@@ -199,8 +199,10 @@ function validateStored(parsed: unknown): OwnedData | null {
     if (!Number.isInteger(index) || index < 0) return null
     if (typeof value !== 'object' || value === null) return null
     const entry = value as Record<string, unknown>
-    // Integer, matching the share codec: a count of 1.5 or 1e21 pals is a hand-edited blob.
-    if (typeof entry.count !== 'number' || !Number.isInteger(entry.count) || entry.count <= 0) return null
+    // `isSafeInteger`, not `isInteger`, and matched by the share codec's `validatePayload`:
+    // `Number.isInteger(1e21)` is true, so a plain integer test admits counts no arithmetic
+    // downstream can add up. A count of 1.5, 1e21 or Infinity pals is a hand-edited blob either way.
+    if (typeof entry.count !== 'number' || !Number.isSafeInteger(entry.count) || entry.count <= 0) return null
     if (!Array.isArray(entry.individuals)) return null
     const individuals: OwnedIndividual[] = []
     for (const raw of entry.individuals.slice(0, MAX_STORED_INDIVIDUALS)) {

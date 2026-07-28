@@ -168,6 +168,11 @@ describe('owned store', () => {
       '{"v":1,"data":{"bySpecies":{"3":{"count":1e400,"individuals":[]}},"importedAt":null,"sourceLabel":null,"warnings":[]}}',
     ],
     [
+      // `Number.isInteger(1e21)` is true, which is exactly why this validates with `isSafeInteger`.
+      'a count past the safe-integer range',
+      '{"v":1,"data":{"bySpecies":{"3":{"count":1e21,"individuals":[]}},"importedAt":null,"sourceLabel":null,"warnings":[]}}',
+    ],
+    [
       'an individual that is not one',
       '{"v":1,"data":{"bySpecies":{"3":{"count":1,"individuals":[7]}},"importedAt":null,"sourceLabel":null,"warnings":[]}}',
     ],

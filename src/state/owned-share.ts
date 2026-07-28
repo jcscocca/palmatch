@@ -96,8 +96,11 @@ function validatePayload(parsed: unknown): OwnedSharePayload | null {
   for (const pair of p.species) {
     if (!Array.isArray(pair) || pair.length !== 2) return null
     const [index, count] = pair as unknown[]
-    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return null
-    if (typeof count !== 'number' || !Number.isInteger(count) || count <= 0) return null
+    // `isSafeInteger` rather than `isInteger` on both, matched by the store's `validateStored`:
+    // `Number.isInteger(1e21)` is true, and neither a species index nor a pal count past 2^53 is a
+    // number anything downstream can do arithmetic with.
+    if (typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0) return null
+    if (typeof count !== 'number' || !Number.isSafeInteger(count) || count <= 0) return null
     species.push([index, count])
   }
   return { v: SHARE_VERSION, species }

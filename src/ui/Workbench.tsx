@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useOwnedStore } from '../state/owned.ts'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ownedRows, useOwnedStore } from '../state/owned.ts'
 import { useWorkbenchStore } from '../state/store.ts'
 import { useDataset } from './dataset-context.ts'
 import { ImportPanel } from './ImportPanel.tsx'
@@ -106,7 +106,11 @@ export function Workbench({ shareBlob = null, onShareHandled }: WorkbenchProps) 
   }, [closeImport, closePalette, importOpen, openPalette, paletteOpen, slotA, slotB])
 
   const { palcalcCommit, gameVersion, refreshedAt } = ds.version
-  const ownedSpecies = Object.keys(bySpecies).length
+  // Counted over the rows this dataset can render, not over the raw store — the same
+  // dataset-filtered question `hasOwnedFor` answers for the panels, and `> 0` here is exactly that
+  // predicate. A list made against a newer paldex would otherwise badge `MY PALS · 2` while every
+  // panel behind it computed `hasOwned === false` and hid its owned controls.
+  const ownedSpecies = useMemo(() => ownedRows(ds.pals, bySpecies).length, [bySpecies, ds.pals])
 
   return (
     <div className="app">

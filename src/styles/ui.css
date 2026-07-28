@@ -931,14 +931,27 @@ button {
  * Shares `.palette-dialog` for the modal shell (fixed overlay + backdrop) and `.palette` for the box
  * itself — the panel carries both classes, so the border, surface and shadow are defined once and
  * the two dialogs cannot drift apart. Only the size differs: wider and taller than the search
- * palette, because the species grid needs the room, and scrolling inside the box rather than the
- * dialog so the head stays put.
+ * palette, because the species grid needs the room, and it scrolls inside the box rather than the
+ * dialog.
  */
 .import-panel {
   gap: 12px;
   max-width: 680px;
   max-height: 84vh;
   overflow-y: auto;
+}
+
+/*
+ * Since the box is what scrolls, the head has to be pinned to it or a 200-species grid carries the
+ * only close button off the top. Padded and backed so the grid doesn't show through underneath.
+ */
+.import-panel .palette-head {
+  position: sticky;
+  top: -12px;
+  z-index: 1;
+  margin: -12px -12px 0;
+  padding: 12px 12px 8px;
+  background: var(--surface);
 }
 
 .import-empty,

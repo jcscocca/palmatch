@@ -401,8 +401,11 @@ export function openCharacterMap(cur: Cursor, className: string): CharacterMap {
  * Closes the walk `openCharacterMap` opened, once every entry has been read: the map's entries have
  * to consume exactly the size its tag declared, which is the strongest end-to-end check there is on
  * the whole walk — anything else means a skip landed in the wrong place and the pals are fiction.
- * Paired with `openCharacterMap` here rather than left to the caller so the breadcrumb the error
- * carries (`worldSaveData.CharacterSaveParameterMap`) is set by the module that knows the path.
+ * Resetting `cur.path` is the whole reason this is a function rather than a line in the caller: by
+ * the time every entry has been walked, the breadcrumb is pointing at the last one, and a failure
+ * reported against `CharacterSaveParameterMap[199].Value` would name the wrong property. Set back
+ * to `worldSaveData`, `endValue` composes it with the map's own tag name and the error reads
+ * `worldSaveData.CharacterSaveParameterMap`, which is the property that actually failed.
  */
 export function closeCharacterMap(cur: Cursor, map: CharacterMap): void {
   cur.path = 'worldSaveData'

@@ -9,7 +9,10 @@ export interface OwnedSummaryProps {
   bySpecies: OwnedBySpecies
   warnings: string[]
   sourceLabel: string | null
-  /** Players in the save this list came from; 0 for a shared list, which carries no such count. */
+  /**
+   * Players in the save this list came from; 0 for a shared list, which carries no such count.
+   * Only reported above 1 — see `countLine`.
+   */
   playerRows: number
   /** Inline confirmation for SHARE / DOWNLOAD — announced politely, not as a toast over the dialog. */
   note: string | null
@@ -46,8 +49,10 @@ export function OwnedSummary({
   const total = rows.reduce((sum, row) => sum + row.count, 0)
   // One string rather than a row of JSX expressions: this line is the panel's headline, and a
   // sentence split across a dozen text nodes is one no assistive tech or test can read as a whole.
+  // Only past one player: a single-player world has exactly one player row, and calling that "a
+  // guild of 1" is noise on every solo save — the line is there to explain a shared palbox.
   const countLine = `${rows.length} species · ${total} pal${total === 1 ? '' : 's'}${
-    playerRows > 0 ? ` · guild of ${playerRows} player${playerRows === 1 ? '' : 's'}` : ''
+    playerRows > 1 ? ` · guild of ${playerRows} players` : ''
   }${sourceLabel === null ? '' : ` · from ${sourceLabel}`}`
 
   return (

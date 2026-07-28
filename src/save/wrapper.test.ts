@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { build, cnk0, junkFile, levelGvas, plm1, plz1, plz2, truncateTo } from './fixtures/builder.ts'
 import type { OozDecompress } from './ooz.ts'
-import { codeOf, detailOf } from './test-utils.ts'
-import { ParseError } from './types.ts'
+import { codeOf, codeOfSync, detailOf, detailOfSync } from './test-utils.ts'
 import { decompressSave, MAX_DECOMPRESSED_BYTES, sniffWrapper } from './wrapper.ts'
 
 /** Rewrites one of the header's two u32 lengths, to fake the corruption a real file would show. */
@@ -24,42 +23,25 @@ describe('sniffWrapper', () => {
   })
 
   it('rejects a file too short to hold a header', () => {
-    expect(() => sniffWrapper(new Uint8Array(23))).toThrow(/at least 24/)
-    try {
-      sniffWrapper(new Uint8Array(23))
-    } catch (error) {
-      expect((error as ParseError).code).toBe('not-a-save')
-    }
+    expect(codeOfSync(() => sniffWrapper(new Uint8Array(23)))).toBe('not-a-save')
+    expect(detailOfSync(() => sniffWrapper(new Uint8Array(23)))).toMatch(/at least 24/)
   })
 
   it('names the Xbox container instead of trying to unwrap it', () => {
-    try {
-      sniffWrapper(new Uint8Array(cnk0(plz1(gvas))))
-      throw new Error('expected a throw')
-    } catch (error) {
-      expect((error as ParseError).code).toBe('xbox-save')
-      expect((error as ParseError).message).toMatch(/CNK0/)
-    }
+    const xbox = () => sniffWrapper(new Uint8Array(cnk0(plz1(gvas))))
+    expect(codeOfSync(xbox)).toBe('xbox-save')
+    expect(detailOfSync(xbox)).toMatch(/CNK0/)
   })
 
   it('rejects an unknown magic, quoting what it saw', () => {
-    try {
-      sniffWrapper(new Uint8Array(junkFile()))
-      throw new Error('expected a throw')
-    } catch (error) {
-      expect((error as ParseError).code).toBe('unknown-magic')
-      expect((error as ParseError).message).toMatch(/XYZ/)
-    }
+    const junk = () => sniffWrapper(new Uint8Array(junkFile()))
+    expect(codeOfSync(junk)).toBe('unknown-magic')
+    expect(detailOfSync(junk)).toMatch(/XYZ/)
   })
 
   it('refuses a header claiming more decompressed data than we would ever hold', () => {
     const huge = patchU32(plz1(gvas), 0, MAX_DECOMPRESSED_BYTES + 1)
-    try {
-      sniffWrapper(new Uint8Array(huge))
-      throw new Error('expected a throw')
-    } catch (error) {
-      expect((error as ParseError).code).toBe('too-large')
-    }
+    expect(codeOfSync(() => sniffWrapper(new Uint8Array(huge)))).toBe('too-large')
   })
 
   it('bounds the intermediate length too, since a PlZ2 first pass is budgeted by it', () => {
@@ -71,13 +53,8 @@ describe('sniffWrapper', () => {
       w.u8(0x32)
       w.zeros(64)
     })
-    try {
-      sniffWrapper(evil)
-      throw new Error('expected a throw')
-    } catch (error) {
-      expect((error as ParseError).code).toBe('too-large')
-      expect((error as ParseError).message).toMatch(/intermediate/)
-    }
+    expect(codeOfSync(() => sniffWrapper(evil))).toBe('too-large')
+    expect(detailOfSync(() => sniffWrapper(evil))).toMatch(/intermediate/)
   })
 })
 

@@ -242,6 +242,13 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inFlightRef = useRef<{ id: number; expired: boolean }>({ id: 0, expired: true })
   const closedRef = useRef(false)
+  /**
+   * Bumped by every `ingest`. The worker protocol has its own request id, but that only starts once
+   * a buffer exists — the window *before* it, while `file.arrayBuffer()` is resolving, is unguarded
+   * by anything else, and reading a 400 MB save takes long enough for a second drop to finish
+   * entirely inside it. Whichever ingest is newest owns the panel; older continuations return.
+   */
+  const ingestRef = useRef(0)
 
   // The worker resolves species itself but never loads the paldex — it gets the lookup as plain
   // entry pairs, built here from the dataset the app already has.
@@ -288,8 +295,11 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
    * Drop whatever is in flight on the floor: expire the request id so a reply in transit is
    * discarded, stop the timeout, and kill the worker so a parse of 400 MB isn't left chewing (and
    * holding its decompressed copy, plus the wasm heap if it got that far) on a question nobody is
-   * waiting for. Called before every path that installs a new list, which is what closes the race
-   * where a share dropped mid-parse is silently clobbered seconds later by the save's own result.
+   * waiting for.
+   *
+   * This closes the *worker* half of the clobber race only — everything downstream of a posted
+   * request. The half before it, where a file is still being read off disk and no worker exists to
+   * abort, is closed by `ingestRef`; the two are needed together.
    */
   const abortInFlight = useCallback((): void => {
     inFlightRef.current = { ...inFlightRef.current, expired: true }
@@ -333,7 +343,17 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
       const id = inFlightRef.current.id + 1
       inFlightRef.current = { id, expired: false }
 
-      const worker = new Worker(new URL('../save/save-import.worker.ts', import.meta.url), { type: 'module' })
+      let worker: Worker
+      try {
+        worker = new Worker(new URL('../save/save-import.worker.ts', import.meta.url), { type: 'module' })
+      } catch (cause) {
+        // A Content-Security-Policy without `worker-src`, or a browser without module workers, makes
+        // the constructor itself throw — `onerror` never fires, so without this the panel sits on
+        // READING forever with no way out but a reload.
+        inFlightRef.current = { ...inFlightRef.current, expired: true }
+        setState({ status: 'error', code: 'internal', detail: `the import worker could not be started: ${messageOf(cause)}`, label })
+        return
+      }
       workerRef.current = worker
       // The protocol is terminal — one answer per request — so the worker is retired the moment it
       // gives one. Otherwise it sits idle holding its wasm linear memory (tens of MB, never returned
@@ -356,7 +376,10 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
         }
       }
       worker.onerror = (event: ErrorEvent) => {
-        if (inFlightRef.current.expired) return
+        // Matched on the id exactly as `onmessage` is: an error queued by a worker that was already
+        // terminated would otherwise expire whatever request replaced it, and leave *that* worker
+        // running with nothing left holding a reference to terminate it.
+        if (inFlightRef.current.expired || inFlightRef.current.id !== id) return
         settle()
         const detail = event.message === '' ? 'the import worker failed to start' : event.message
         setState({ status: 'error', code: 'internal', detail, label })
@@ -379,6 +402,7 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
       // Before the async read, not after it: from here on the panel is committed to this file, and
       // an earlier parse still running must not be allowed to land on top of whatever it produces.
       abortInFlight()
+      const generation = ++ingestRef.current
       // Checked against the *file's* size, before a byte is read: the point of the cap is not to
       // read half a gigabyte into the tab only to reject it.
       if (file.size > MAX_FILE_BYTES) {
@@ -395,9 +419,11 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
       // telling a `.palmatch.json` from a `.sav` needs the payload validator.
       Promise.all([file.arrayBuffer(), loadCodec()]).then(
         ([buffer, codec]) => {
-          // Reading a few hundred MB outlives an impatient close. Starting a worker here after the
-          // unmount cleanup has run would leave one alive with nothing left to terminate it.
-          if (closedRef.current) return
+          // Reading a few hundred MB outlives an impatient close, and outlives a second drop. The
+          // first guard stops a worker being started after the unmount cleanup ran (nothing would
+          // be left to terminate it); the second stops a slow save's read finishing *after* a small
+          // shared list was dropped on top of it and quietly parsing over the list the player chose.
+          if (closedRef.current || ingestRef.current !== generation) return
           const share = sniffShareFile(file, buffer, codec.parseOwnedShareJson)
           if (share === 'invalid') {
             setState({
@@ -416,7 +442,7 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
           parseInWorker(file.name, buffer)
         },
         (cause: unknown) => {
-          if (closedRef.current) return
+          if (closedRef.current || ingestRef.current !== generation) return
           setState({ status: 'error', code: 'internal', detail: messageOf(cause), label: file.name })
         },
       )

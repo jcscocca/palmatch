@@ -140,6 +140,15 @@ function drop(file: File): void {
   fireEvent.drop(dropZone(), { dataTransfer: { files: [file] } })
 }
 
+/**
+ * `fireEvent.dragLeave(node, { relatedTarget })` silently drops `relatedTarget` under jsdom, and
+ * that field is the whole of what the flicker fix reads — a test written that way exercises the
+ * "left the window" branch no matter which element it names. A hand-built `MouseEvent` carries it.
+ */
+function dragLeave(zone: HTMLElement, relatedTarget: EventTarget | null): void {
+  fireEvent(zone, new MouseEvent('dragleave', { bubbles: true, relatedTarget }))
+}
+
 /** The worker the panel built for the file just dropped, once the async read has handed it over. */
 async function posted(): Promise<FakeWorker> {
   await waitFor(() => expect(workers).toHaveLength(1))
@@ -360,6 +369,122 @@ describe('ImportPanel', () => {
     expect(useOwnedStore.getState().importedAt).toBeNull()
   })
 
+  it('discards a save whose read finishes after a shared list was dropped on top of it', async () => {
+    // The window before any worker exists: reading a 400 MB save takes seconds, and a small shared
+    // list dropped into that window resolves first. Without a generation guard the save's
+    // continuation still runs, starts a worker, and parses over the list the player just chose.
+    const list: OwnedBySpecies = { 4: { count: 3, individuals: [] } }
+    const slow = saveFile('big.sav')
+    let releaseRead: (buffer: ArrayBuffer) => void = () => undefined
+    vi.spyOn(slow, 'arrayBuffer').mockReturnValue(
+      new Promise<ArrayBuffer>((resolve) => {
+        releaseRead = resolve
+      }),
+    )
+
+    show()
+    drop(slow)
+    fireEvent.drop(screen.getByLabelText('my pals'), {
+      dataTransfer: { files: [new File([shareJson(list)], 'my-pals.palmatch.json')] },
+    })
+    await waitFor(() => expect(useOwnedStore.getState().bySpecies[4].count).toBe(3))
+
+    // Now the big save's read finally lands. It must go nowhere.
+    releaseRead(saveBytes().buffer as ArrayBuffer)
+    await waitFor(() => expect(screen.getByText(/1 species · 3 pals/)).toBeTruthy())
+    expect(workers).toHaveLength(0)
+    expect(useOwnedStore.getState().bySpecies).toEqual(list)
+    expect(useOwnedStore.getState().sourceLabel).toBe('my-pals.palmatch.json')
+  })
+
+  it('drops a read that lands after the panel closed, rather than starting an orphan worker', async () => {
+    const slow = saveFile('big.sav')
+    let releaseRead: (buffer: ArrayBuffer) => void = () => undefined
+    vi.spyOn(slow, 'arrayBuffer').mockReturnValue(
+      new Promise<ArrayBuffer>((resolve) => {
+        releaseRead = resolve
+      }),
+    )
+
+    show()
+    drop(slow)
+    cleanup()
+
+    releaseRead(saveBytes().buffer as ArrayBuffer)
+    await Promise.resolve()
+    // A worker started here would have nothing left to terminate it — the unmount cleanup has run.
+    await waitFor(() => expect(workers).toHaveLength(0))
+    expect(useOwnedStore.getState().importedAt).toBeNull()
+  })
+
+  it('says so when the worker cannot be constructed at all', async () => {
+    // A CSP without `worker-src`, or a browser with no module workers: the constructor throws (a
+    // SecurityError in a real browser, which `messageOf` reads the same way) and `onerror` never
+    // fires, so without a catch the panel sits on READING until a reload.
+    vi.stubGlobal(
+      'Worker',
+      class {
+        constructor() {
+          throw new Error('blocked by Content-Security-Policy')
+        }
+      },
+    )
+    show()
+    drop(saveFile())
+
+    await waitFor(() => expect(screen.getByText(/something went wrong reading that file/)).toBeTruthy())
+    expect(screen.getByText(/the import worker could not be started: blocked by Content-Security-Policy/)).toBeTruthy()
+    expect(screen.queryByLabelText('reading your save')).toBeNull()
+  })
+
+  it('ignores an error queued by a worker that was already replaced', async () => {
+    show()
+    drop(saveFile('one.sav'))
+    const first = await posted()
+
+    fireEvent.drop(screen.getByLabelText('my pals'), { dataTransfer: { files: [saveFile('two.sav')] } })
+    await waitFor(() => expect(workers).toHaveLength(2))
+    const second = workers[1]
+
+    // The terminated worker's error arrives late. Matched on id, it is dropped; unmatched, it would
+    // expire the second request and leave that worker running with nobody holding it.
+    first.fail('boom')
+    expect(screen.queryByText(/something went wrong reading that file/)).toBeNull()
+    expect(second.terminated).toBe(false)
+
+    await waitFor(() => expect(second.posted).toHaveLength(1))
+    second.reply({ ok: true, requestId: second.posted[0].requestId, result: importResult([ownedPal(idx('Lamball'))]) })
+    expect(screen.getByText(/1 species · 1 pal/)).toBeTruthy()
+    expect(second.terminated).toBe(true)
+  })
+
+  it('keeps the drop highlight while the cursor moves over the zone’s own children', () => {
+    show()
+    const zone = dropZone()
+    fireEvent.dragOver(zone)
+    expect(zone.className).toContain('drop-zone-over')
+
+    // Entering a child fires dragleave on the zone itself; treating that as an exit makes the
+    // border strobe as the cursor crosses the text inside it.
+    dragLeave(zone, zone.querySelector('.drop-line'))
+    expect(dropZone().className).toContain('drop-zone-over')
+
+    // Leaving for something outside the zone is a real exit.
+    dragLeave(zone, document.body)
+    expect(dropZone().className).not.toContain('drop-zone-over')
+  })
+
+  it('drops the highlight when the drag leaves the window entirely', () => {
+    show()
+    const zone = dropZone()
+    fireEvent.dragOver(zone)
+    expect(zone.className).toContain('drop-zone-over')
+
+    // No relatedTarget at all — the cursor left the document.
+    dragLeave(zone, null)
+    expect(dropZone().className).not.toContain('drop-zone-over')
+  })
+
   it('discards a save parse that lands after a shared list was applied over it', async () => {
     const list: OwnedBySpecies = { 4: { count: 3, individuals: [] } }
     show()
@@ -428,17 +553,22 @@ describe('ImportPanel', () => {
     expect(screen.queryByText(/1 species · 3 pals/)).toBeNull()
   })
 
-  it('says how many players share the world the list came from', async () => {
+  it.each([
+    [3, '1 species · 1 pal · guild of 3 players · from Level.sav'],
+    // A solo world has exactly one player row; "guild of 1" on every single-player save is noise.
+    [1, '1 species · 1 pal · from Level.sav'],
+    [0, '1 species · 1 pal · from Level.sav'],
+  ])('names a guild of %i players in the headline', async (playerRows, line) => {
     show()
     drop(saveFile())
     const worker = await posted()
     worker.reply({
       ok: true,
       requestId: worker.posted[0].requestId,
-      result: importResult([ownedPal(idx('Lamball'))], [], 3),
+      result: importResult([ownedPal(idx('Lamball'))], [], playerRows),
     })
 
-    expect(screen.getByText('1 species · 1 pal · guild of 3 players · from Level.sav')).toBeTruthy()
+    expect(screen.getByText(line)).toBeTruthy()
   })
 
   it('totals the species it can actually render, not everything in the store', async () => {
@@ -499,6 +629,25 @@ describe('ImportPanel', () => {
       fireEvent.click(await screen.findByText('CANCEL'))
       expect(onClose).toHaveBeenCalled()
       expect(useOwnedStore.getState().bySpecies).toEqual({ 1: { count: 1, individuals: [] } })
+    })
+
+    it('LOAD installs exactly what the confirm step offered, without going near the parser', async () => {
+      useOwnedStore.getState().loadShared([[1, 1]], 'mine')
+      show({ shareBlob: encodeOwnedShare(shared) })
+      await screen.findByText('LOAD')
+
+      fireEvent.click(screen.getByText('LOAD'))
+
+      // The species the confirm step showed, under the shared-list label, with no worker involved —
+      // a link is a list, not a save, and nothing about it should touch the save parser.
+      expect(useOwnedStore.getState().bySpecies).toEqual({
+        2: { count: 5, individuals: [] },
+        6: { count: 1, individuals: [] },
+      })
+      expect(useOwnedStore.getState().sourceLabel).toBe('shared list')
+      expect(useOwnedStore.getState().playerRows).toBe(0)
+      expect(workers).toHaveLength(0)
+      expect(screen.getByText('2 species · 6 pals · from shared list')).toBeTruthy()
     })
 
     it('says so when the link is damaged, instead of importing half of it', async () => {
@@ -686,6 +835,58 @@ describe('ImportPanel', () => {
     // MAX_WALK_DEPTH = 2 and MAX_DIRECTORIES = 64: 1 + 8 + 64 would be the unbounded shape, and the
     // directory budget is what actually stops it.
     expect(visited).toBeLessThanOrEqual(64)
+  })
+
+  /** A picked folder whose iteration fails — a revoked permission, a disconnected drive. */
+  function failingPicker(): { release: (reason: Error) => void } {
+    const control: { release: (reason: Error) => void } = { release: () => undefined }
+    vi.stubGlobal('showDirectoryPicker', () =>
+      Promise.resolve({
+        kind: 'directory' as const,
+        name: 'SaveGames',
+        values: () => ({
+          [Symbol.asyncIterator]() {
+            return this
+          },
+          next: () =>
+            new Promise<never>((_resolve, reject) => {
+              control.release = reject
+            }),
+        }),
+      }),
+    )
+    return control
+  }
+
+  it('blames itself, not the file, when the folder walk fails', async () => {
+    const walk = failingPicker()
+    show()
+    fireEvent.click(screen.getByText('FIND MY SAVE FOLDER'))
+    await waitFor(() => expect(typeof walk.release).toBe('function'))
+
+    walk.release(new Error('permission denied'))
+
+    // Nothing was read, so nothing can be said about a file — this is our failure, not the save's.
+    await waitFor(() => expect(screen.getByText(/something went wrong reading that file/)).toBeTruthy())
+    expect(screen.getByText('permission denied')).toBeTruthy()
+  })
+
+  it('stays quiet when that failure lands after the panel has closed', async () => {
+    const walk = failingPicker()
+    show()
+    fireEvent.click(screen.getByText('FIND MY SAVE FOLDER'))
+    await waitFor(() => expect(typeof walk.release).toBe('function'))
+    cleanup()
+
+    // Deliberately weak, and worth saying why: React 19 turns a `setState` on an unmounted
+    // component into a silent no-op, so the `closedRef` guard on this path cannot be caught failing
+    // from the outside. What this does pin is that the rejection is handled at all — an unguarded
+    // `throw` out of the handler would surface here as an unhandled rejection — and that a closed
+    // panel is never brought back. The guard itself is defence-in-depth, matching `ingest`'s.
+    walk.release(new Error('permission denied'))
+    await Promise.resolve()
+    expect(screen.queryByLabelText('my pals')).toBeNull()
+    expect(screen.queryByText(/something went wrong/)).toBeNull()
   })
 
   it('says so when the chosen folder holds no save at all', async () => {

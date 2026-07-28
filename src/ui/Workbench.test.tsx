@@ -129,6 +129,26 @@ describe('MY PALS header button', () => {
     expect(screen.getByText('MY PALS · 2')).toBeTruthy()
   })
 
+  it('counts only species this dataset can render, so the badge agrees with the panels', () => {
+    // A list shared from a newer build. Counting its unknown species here would badge `MY PALS · 2`
+    // over a workbench where every owned control is hidden, because the panels ask `hasOwnedFor`.
+    useOwnedStore.getState().loadShared(
+      [
+        [1, 4],
+        [ds.pals.length + 40, 9],
+      ],
+      'a newer build',
+    )
+    renderWorkbench()
+    expect(screen.getByText('MY PALS · 1')).toBeTruthy()
+  })
+
+  it('shows no count at all when nothing in the list exists in this dataset', () => {
+    useOwnedStore.getState().loadShared([[ds.pals.length + 40, 9]], 'a newer build')
+    renderWorkbench()
+    expect(screen.getByText('MY PALS')).toBeTruthy()
+  })
+
   it('opens straight onto the confirm step for a #/own/ share link', async () => {
     render(
       <DatasetContext value={ds}>
