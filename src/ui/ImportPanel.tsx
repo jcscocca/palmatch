@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent, KeyboardEvent, ReactNode } from 'react'
 import { buildLowerLookup } from '../lib/lower-lookup.ts'
+import { unreadableStorageWarning } from '../save/types.ts'
 import type { ImportSource, ParseErrorCode, SaveImportRequest, SaveImportResponse, StorageInput } from '../save/types.ts'
 import { useOwnedStore } from '../state/owned.ts'
 import type { SharedSpecies } from '../state/owned.ts'
@@ -60,9 +61,15 @@ const DOWNLOAD_NAME = 'my-pals.palmatch.json'
  * Said once, after a lone `Level.sav`, and phrased as a fact about what was read rather than as a
  * claim that pals are missing: most players never build a Dimensional Pal Storage at all, and
  * telling all of them their import is incomplete would be both wrong and alarming.
+ *
+ * Two versions, because the advice has to be advice the player's browser can take: Firefox and
+ * Safari have no `showDirectoryPicker`, so "pick your save folder" there names a button that isn't
+ * on their screen. They get the route that does work — several files in one file dialog.
  */
-const LONE_SAVE_NOTE =
+const LONE_SAVE_NOTE_FOLDER =
   'read Level.sav only — if you use Dimensional Pal Storage, pick your save folder instead and those pals come too'
+const LONE_SAVE_NOTE_FILES =
+  'read Level.sav only — if you use Dimensional Pal Storage, select Level.sav and the _dps.sav files beside it together'
 
 /**
  * The panel's failure vocabulary: every `ParseErrorCode` the worker can send, plus the three things
@@ -303,6 +310,11 @@ async function walkForSaves(
   for (const sub of subdirs) await walkForSaves(sub.handle, sub.path, depth + 1, out, budget, globals)
 }
 
+/** Whichever route to the storage files this browser actually offers — see the two notes above. */
+function loneSaveNote(): string {
+  return directoryPicker() === null ? LONE_SAVE_NOTE_FILES : LONE_SAVE_NOTE_FOLDER
+}
+
 /** `Level.sav · 2 storage files`, or just the save's name when it was the only file read. */
 function sourceLabelOf(base: string, sources: ImportSource[]): string {
   const extra = sources.filter((s) => s.kind === 'storage').length
@@ -462,7 +474,14 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
   )
 
   const parseInWorker = useCallback(
-    (label: string, buffer: ArrayBuffer, storage: StorageInput[], scanned: boolean): void => {
+    (
+      label: string,
+      buffer: ArrayBuffer,
+      storage: StorageInput[],
+      scanned: boolean,
+      /** Storage files whose bytes never arrived, already phrased as warnings. */
+      unreadable: string[],
+    ): void => {
       abortInFlight()
       const id = inFlightRef.current.id + 1
       inFlightRef.current = { id, expired: false }
@@ -493,11 +512,18 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
         if (inFlightRef.current.expired || data.requestId !== inFlightRef.current.id) return
         settle()
         if (data.ok) {
-          setOwned(data.result, sourceLabelOf(label, data.result.sources))
+          // A file we never got the bytes of is the same loss to the player as one the parser
+          // choked on — a file they can see, holding pals that aren't in the count — so it is
+          // folded into the same warning list rather than disappearing between the two layers.
+          const result =
+            unreadable.length === 0
+              ? data.result
+              : { ...data.result, warnings: [...data.result.warnings, ...unreadable] }
+          setOwned(result, sourceLabelOf(label, data.result.sources))
           // Only when nobody looked. A walked save folder with no `_dps.sav` in it is the normal
           // case — most players never build the storage — and saying anything there would turn a
           // complete import into a nagging one.
-          setStorageNote(scanned || storage.length > 0 ? null : LONE_SAVE_NOTE)
+          setStorageNote(scanned || storage.length > 0 || unreadable.length > 0 ? null : loneSaveNote())
           setState({ status: 'idle' })
         } else {
           setState({ status: 'error', code: data.code, detail: data.detail, label })
@@ -547,21 +573,22 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
       // Every storage file's bytes are read alongside the save's, so all of them can be transferred
       // to the worker in one message: the protocol answers once, with one merged result. A storage
       // file that won't even read off disk — a revoked permission, a drive pulled mid-import —
-      // resolves to null and is left behind rather than rejecting the whole `Promise.all`: the same
-      // rule the parser applies to one that won't parse.
+      // settles into a warning rather than rejecting the whole `Promise.all`, so it costs that one
+      // file and says so by name, exactly as the parser does for one it can't decode.
       setState({ status: 'parsing', label: file.name, bytes: file.size })
+      type StorageRead = { ok: true; input: StorageInput } | { ok: false; warning: string }
       const storageBytes = Promise.all(
         storage.map((s) =>
           s.file.arrayBuffer().then(
-            (buffer): StorageInput | null => ({ label: s.label, buffer }),
-            () => null,
+            (buffer): StorageRead => ({ ok: true, input: { label: s.label, buffer } }),
+            (cause: unknown): StorageRead => ({ ok: false, warning: unreadableStorageWarning(s.label, messageOf(cause)) }),
           ),
         ),
       )
       // The codec await is normally already settled (it was warmed on mount) — it is here because
       // telling a `.palmatch.json` from a `.sav` needs the payload validator.
       Promise.all([file.arrayBuffer(), loadCodec(), storageBytes]).then(
-        ([buffer, codec, storageInputs]) => {
+        ([buffer, codec, storageReads]) => {
           // Reading a few hundred MB outlives an impatient close, and outlives a second drop. The
           // first guard stops a worker being started after the unmount cleanup ran (nothing would
           // be left to terminate it); the second stops a slow save's read finishing *after* a small
@@ -585,8 +612,9 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
           parseInWorker(
             file.name,
             buffer,
-            storageInputs.filter((s) => s !== null),
+            storageReads.filter((r) => r.ok).map((r) => r.input),
             scanned,
+            storageReads.filter((r) => !r.ok).map((r) => r.warning),
           )
         },
         (cause: unknown) => {

@@ -9,7 +9,14 @@ import {
   readGvasHeader,
 } from './gvas.ts'
 import type { OozDecompress } from './ooz.ts'
-import { ParseError, type ImportResult, type ImportSource, type OwnedPal, type StorageInput } from './types.ts'
+import {
+  ParseError,
+  unreadableStorageWarning,
+  type ImportResult,
+  type ImportSource,
+  type OwnedPal,
+  type StorageInput,
+} from './types.ts'
 import { decompressSave } from './wrapper.ts'
 
 /**
@@ -232,6 +239,14 @@ export async function parseStorageSave(
  * 3. palcalc reads `Level.sav`, every `_dps.sav` and `GlobalPalStorage.sav` into one pal list with
  *    no dedupe of any kind, treating them as distinct locations.
  *
+ * **Point 3 is weaker precedent than it looks, and the difference is ours to own.** palcalc also
+ * cross-references every `Level.sav` pal against the container save data and drops any whose
+ * container holds no slot record for it (`PC LevelSaveFile.cs:271-276`) — so even if a moved pal did
+ * linger in the map, palcalc would discard it there for an unrelated reason. palmatch parses no
+ * containers (a spec non-goal), so it has no such second line: our correctness rests on move
+ * semantics alone, points 1 and 2. The visible consequence if that ever stops holding is that our
+ * `palCount` reads *higher* than palcalc's on the same save, never lower.
+ *
  * An identity key does exist if this is ever wrong — `InstanceId`, in the `Level.sav` map key and in
  * each storage element — but reading every map key's GUID on a 400 MB save is real cost against a
  * case the format says cannot happen.
@@ -257,9 +272,7 @@ export async function parseSaveSet(
     try {
       tally = await readFile(file.buffer, byIdLower, storageSource, loadOozFn)
     } catch (cause) {
-      warnings.push(
-        `couldn't read ${file.label}, so any pals kept in it are not counted: ${cause instanceof Error ? cause.message : String(cause)}`,
-      )
+      warnings.push(unreadableStorageWarning(file.label, cause instanceof Error ? cause.message : String(cause)))
       continue
     }
     sources.push({ label: file.label, kind: 'storage', palCount: tally.palCount })

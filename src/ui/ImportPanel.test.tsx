@@ -1053,6 +1053,57 @@ describe('ImportPanel', () => {
       expect(screen.queryByRole('alert')).toBeNull()
     })
 
+    it('points that note at whichever route the browser actually has', async () => {
+      // Firefox and Safari have no `showDirectoryPicker`, so "pick your save folder" would name a
+      // button that isn't on their screen — the advice has to be advice they can take.
+      show()
+      drop(saveFile())
+      const first = await posted()
+      first.reply({ ok: true, requestId: first.posted[0].requestId, result: importResult([ownedPal(idx('Lamball'))]) })
+      expect(screen.getByText(/select Level\.sav and the _dps\.sav files beside it together/)).toBeTruthy()
+      cleanup()
+
+      workers = []
+      // The store outlives `cleanup`, and a panel opened over an existing list starts on the summary
+      // rather than the drop zone.
+      useOwnedStore.getState().clearOwned()
+      vi.stubGlobal('showDirectoryPicker', () => Promise.resolve(worldDir(null)))
+      show()
+      drop(saveFile())
+      const second = await posted()
+      second.reply({ ok: true, requestId: second.posted[0].requestId, result: importResult([ownedPal(idx('Lamball'))]) })
+      expect(screen.getByText(/pick your save folder instead/)).toBeTruthy()
+    })
+
+    it('names a storage file whose bytes never arrived, rather than losing it silently', async () => {
+      // Same visible loss as a file the parser choked on — a file the player can see, holding pals
+      // that aren't in the count. Treating the two differently purely by where they failed would
+      // leave the summary claiming fewer storage files with no explanation of the missing one.
+      const unreadable = new File([saveBytes()], '0002_dps.sav')
+      Object.defineProperty(unreadable, 'arrayBuffer', {
+        value: () => Promise.reject(new Error('permission denied')),
+      })
+
+      show()
+      drop(saveFile(), storageFile('0001_dps.sav'), unreadable)
+
+      const worker = await posted()
+      // Only the file that read is sent on; the worker is never handed a hole to trip over.
+      expect(worker.posted[0].storage?.map((s) => s.label)).toEqual(['0001_dps.sav'])
+
+      worker.reply({
+        ok: true,
+        requestId: worker.posted[0].requestId,
+        result: importResult([ownedPal(idx('Lamball'))], [], 0, [
+          { label: 'Level.sav', kind: 'level', palCount: 1 },
+          { label: '0001_dps.sav', kind: 'storage', palCount: 0 },
+        ]),
+      })
+
+      expect(screen.getByText(/couldn't read 0002_dps\.sav, so any pals kept in it are not counted: permission denied/)).toBeTruthy()
+      expect(screen.getByText(/from Level\.sav · 1 storage file$/)).toBeTruthy()
+    })
+
     it('names the storage files it actually read in the summary line', async () => {
       show()
       drop(saveFile(), storageFile('0001_dps.sav'), storageFile('0002_dps.sav'))

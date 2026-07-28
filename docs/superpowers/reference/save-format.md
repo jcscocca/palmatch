@@ -375,6 +375,59 @@ missing/`"None"` (`PC CharacterInstanceVisitor.cs:50`). PC additionally requires
 (`PC CharacterInstanceVisitor.cs:173-178, 219-225`); we don't need slot data, so require only
 `CharacterID`.
 
+### 4.7 The other two pal stores — `SaveParameterArray`
+
+`Level.sav` holds parties, palboxes and base pals. Two more files hold pals and are **not** reachable
+from it, so a `Level.sav`-only import systematically undercounts:
+
+| file | path | notes |
+|---|---|---|
+| Dimensional Pal Storage | `<worldFolder>/Players/<PlayerUID>_dps.sav`, one per player | ~9,600 slots against the palbox's ~960. Exists only once the player has used the feature. The other `.sav` files in `Players/` are player profiles and hold no pals. |
+| Global Palbox | `SaveGames/<userid>/GlobalPalStorage.sav` | Account-wide, and a **sibling of the world folders, one level above** — not inside one. Low volume (manual per-pal export), exists only once used. |
+
+Both use the identical outer wrapper (§1) and GVAS header (§2). `PC GlobalPalStorageSaveFile.cs:19`
+says outright that "the same format is used for both", and both are read by one
+`DimensionalPalStorage_CharacterInstanceVisitor` built with base path `.SaveParameterArray`
+(`PC CharacterInstanceVisitor.cs:395`).
+
+**Two entry paths, and only one of them has `RawData`:**
+
+```
+Level.sav   .worldSaveData.CharacterSaveParameterMap.Value.RawData.SaveParameter   PC :361
+storage     .SaveParameterArray.SaveParameter                                      PC :422
+```
+
+The leading dot is how PC spells the root property list (`PC GvasFile.cs:110` starts the walk at
+`""`), so **`SaveParameterArray` is a root property**, not nested under `worldSaveData`.
+
+`PC CharacterReader.cs:39` matches the `RawData` path *exactly*, so the custom RawData reader can
+never fire for a storage file — **there is no `RawData` indirection there at all.** The shape is:
+
+```
+SaveParameterArray : ArrayProperty<StructProperty>      <- the §3.5 shape: full inner tag, then
+ └─ element (bare struct body, property list to "None")    `count` bare struct bodies
+     ├─ InstanceId    : StructProperty   -> { PlayerUId : Guid, InstanceId : Guid }
+     └─ SaveParameter : StructProperty   -> §4.3, byte-for-byte the same struct as in Level.sav
+```
+
+Consequences for a parser:
+
+- Walk the inner tag per §3.5 before the elements: `u32 count`, FString propName, FString propType,
+  `u64`, FString typeName, 16-byte guid, 1 skipped byte. **That `u64` is not "unused"** the way §3.5
+  implies — `PST archive.py:1124-1135` computes it on write as the total length of the element
+  bodies. Neither reference *reader* checks it, and nothing establishes the game fills it in, so read
+  past it rather than asserting on it. The outer tag's own `size` (§3.4) is the check that works.
+- **Vacant slots occupy elements.** Storage slots are recycled in place, never removed, so almost
+  every element of a lightly-used ~9,600-slot store is an empty one with `CharacterID` absent or
+  `"None"`. In `Level.sav` that shape means a damaged row; here it means an empty slot, and the two
+  must not be tallied together.
+- The element's `SaveParameter.SlotID` is stale: `PC PlayersSaveFile.cs:51-52` reads it as "the
+  original loc the pal was stored before it was moved to DPS" and discards it. That the pal was
+  *moved* is what makes these stores disjoint from `Level.sav` — palcalc reads all three into one
+  list with no dedupe. Note that palcalc also drops `Level.sav` pals whose container has no slot
+  record (`PC LevelSaveFile.cs:271-276`), a second line of defence a parser that skips container
+  parsing does not have.
+
 ---
 
 ## 5. ooz-wasm
@@ -528,6 +581,11 @@ talents: {hp, shot, defense}, ownerUid }`.
    missing/`"None"`. `speciesId` = normalized `CharacterID` (§4.4). `gender` per §4.5.
    `passives` default `[]`. `talents` default `0` each. `ownerUid` = formatted
    `OwnerPlayerUId`, else the first `OldOwnerPlayerUIds` entry, else `null`.
+
+For a pal storage file (`_dps.sav`, `GlobalPalStorage.sav`), steps 1-3 are unchanged and steps 4-6
+are replaced by §4.7: find the root `SaveParameterArray`, walk its inner tag, and read each element
+as a property list straight into step 7 — there is no `RawData` to lift out first. Steps 7-8 are
+identical, except that a missing `CharacterID` means an empty slot rather than a damaged row.
 
 ### The 5 places this goes wrong
 

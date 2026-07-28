@@ -113,6 +113,17 @@ export interface StorageInput {
 }
 
 /**
+ * The one sentence said about a pal storage file that did not make it into the import, wherever it
+ * fell over: the parser can't read its bytes as a save, or the panel couldn't get its bytes off disk
+ * at all. Both are the same loss to the player — a file they can see, holding pals that aren't in
+ * the count — so they say the same thing, and this lives here because the panel must not import the
+ * parser (`parse.ts` pulls in pako; see `MAX_FILE_BYTES` in ImportPanel).
+ */
+export function unreadableStorageWarning(label: string, detail: string): string {
+  return `couldn't read ${label}, so any pals kept in it are not counted: ${detail}`
+}
+
+/**
  * `buffer` is transferred, not copied, so the caller's view is neutered once this is posted — as is
  * every `storage` buffer beside it. `byIdLower` arrives as entry pairs rather than a `Map` purely to
  * keep the message plain JSON — the dataset lives on the main thread and the worker never loads it.

@@ -9,13 +9,14 @@
 
 1. **Non-tech drag-and-drop**: a random non-technical player imports their save with zero installs, zero command line — drop `Level.sav` on the page (or pick the save folder), done. Fully client-side.
 2. **Owned-aware answers**: chains can start from "everything we own"; combo tables can filter/badge to owned pals.
+2b. **Every pal store, not just `Level.sav`** (added 2026-07-27): Dimensional Pal Storage (`<world>/Players/<uid>_dps.sav`, ~9,600 slots and the recommended dump for duplicate catches and breeding leftovers) and the account-wide Global Palbox (`SaveGames/<userid>/GlobalPalStorage.sav`) are separate files, so a `Level.sav`-only import undercounts exactly the breeding-heavy player this tool targets. One import reads all of them and merges them into one owned list. Folder-picking becomes the recommended path since it is the only one that reaches the Global Palbox (which sits *above* the world folder); multi-file selection is the fallback where `showDirectoryPicker` doesn't exist. A lone `Level.sav` still works and says so. Byte format in `reference/save-format.md` §4.7.
 3. **Zero-step for the group**: one import covers the whole guild (all guild pals live in the host's `Level.sav`); a compact share link hands the owned list to server mates.
 4. Privacy: saves never leave the browser; nothing derived from a real save is committed to the repo.
 
 ## Non-goals
 
 - Xbox/Game Pass container saves (`CNK0`/WGS format) — detected and declined with a clear message.
-- Full save editing, IV-perfect breeding solving over individuals (palcalc's deeper feature), pal *locations* (container cross-referencing) — owned species + individuals' gender/passives/IVs is the v1 extract.
+- Full save editing, IV-perfect breeding solving over individuals (palcalc's deeper feature), pal *locations* (container cross-referencing) — owned species + individuals' gender/passives/IVs is the v1 extract. Note that skipping container parsing costs the one cross-check palcalc uses to drop `Level.sav` pals with no container slot record; see the dedupe note in `src/save/parse.ts`.
 - Auto-refresh/file-watching. Import is a manual, repeatable action.
 
 ## Licensing decision (user-approved)
