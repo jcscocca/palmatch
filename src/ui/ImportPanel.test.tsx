@@ -373,7 +373,7 @@ describe('ImportPanel', () => {
     // The window before any worker exists: reading a 400 MB save takes seconds, and a small shared
     // list dropped into that window resolves first. Without a generation guard the save's
     // continuation still runs, starts a worker, and parses over the list the player just chose.
-    const list: OwnedBySpecies = { 4: { count: 3, individuals: [] } }
+    const list: OwnedBySpecies = { 4: { count: 3, genders: null, individuals: [] } }
     const slow = saveFile('big.sav')
     let releaseRead: (buffer: ArrayBuffer) => void = () => undefined
     vi.spyOn(slow, 'arrayBuffer').mockReturnValue(
@@ -486,7 +486,7 @@ describe('ImportPanel', () => {
   })
 
   it('discards a save parse that lands after a shared list was applied over it', async () => {
-    const list: OwnedBySpecies = { 4: { count: 3, individuals: [] } }
+    const list: OwnedBySpecies = { 4: { count: 3, genders: null, individuals: [] } }
     show()
     drop(saveFile())
     const worker = await posted()
@@ -553,11 +553,12 @@ describe('ImportPanel', () => {
     expect(screen.queryByText(/1 species · 3 pals/)).toBeNull()
   })
 
+  // The `♀1` is the split of the one pal `ownedPal` builds; the guild clause is what varies here.
   it.each([
-    [3, '1 species · 1 pal · guild of 3 players · from Level.sav'],
+    [3, '1 species · 1 pal · ♀1 · guild of 3 players · from Level.sav'],
     // A solo world has exactly one player row; "guild of 1" on every single-player save is noise.
-    [1, '1 species · 1 pal · from Level.sav'],
-    [0, '1 species · 1 pal · from Level.sav'],
+    [1, '1 species · 1 pal · ♀1 · from Level.sav'],
+    [0, '1 species · 1 pal · ♀1 · from Level.sav'],
   ])('names a guild of %i players in the headline', async (playerRows, line) => {
     show()
     drop(saveFile())
@@ -587,7 +588,7 @@ describe('ImportPanel', () => {
   })
 
   it('imports a .palmatch.json list without going near the worker', async () => {
-    const list: OwnedBySpecies = { 4: { count: 3, individuals: [] }, 9: { count: 1, individuals: [] } }
+    const list: OwnedBySpecies = { 4: { count: 3, genders: null, individuals: [] }, 9: { count: 1, genders: null, individuals: [] } }
     show()
     drop(new File([shareJson(list)], 'my-pals.palmatch.json'))
 
@@ -605,7 +606,7 @@ describe('ImportPanel', () => {
   })
 
   describe('shared links', () => {
-    const shared: OwnedBySpecies = { 2: { count: 5, individuals: [] }, 6: { count: 1, individuals: [] } }
+    const shared: OwnedBySpecies = { 2: { count: 5, genders: null, individuals: [] }, 6: { count: 1, genders: null, individuals: [] } }
 
     it('asks before replacing the current list, then loads it', async () => {
       show({ shareBlob: encodeOwnedShare(shared) })
@@ -616,8 +617,8 @@ describe('ImportPanel', () => {
 
       fireEvent.click(screen.getByText('LOAD'))
       expect(useOwnedStore.getState().bySpecies).toEqual({
-        2: { count: 5, individuals: [] },
-        6: { count: 1, individuals: [] },
+        2: { count: 5, genders: null, individuals: [] },
+        6: { count: 1, genders: null, individuals: [] },
       })
       expect(screen.getByText(/2 species · 6 pals/)).toBeTruthy()
     })
@@ -628,7 +629,7 @@ describe('ImportPanel', () => {
 
       fireEvent.click(await screen.findByText('CANCEL'))
       expect(onClose).toHaveBeenCalled()
-      expect(useOwnedStore.getState().bySpecies).toEqual({ 1: { count: 1, individuals: [] } })
+      expect(useOwnedStore.getState().bySpecies).toEqual({ 1: { count: 1, genders: null, individuals: [] } })
     })
 
     it('discards a save whose read finishes after LOAD chose a shared list', async () => {
@@ -664,8 +665,8 @@ describe('ImportPanel', () => {
       // The species the confirm step showed, under the shared-list label, with no worker involved —
       // a link is a list, not a save, and nothing about it should touch the save parser.
       expect(useOwnedStore.getState().bySpecies).toEqual({
-        2: { count: 5, individuals: [] },
-        6: { count: 1, individuals: [] },
+        2: { count: 5, genders: null, individuals: [] },
+        6: { count: 1, genders: null, individuals: [] },
       })
       expect(useOwnedStore.getState().sourceLabel).toBe('shared list')
       expect(useOwnedStore.getState().playerRows).toBe(0)
@@ -680,12 +681,12 @@ describe('ImportPanel', () => {
     })
 
     it('leaves out species this build has never heard of, and says how many', async () => {
-      const stale: OwnedBySpecies = { 2: { count: 1, individuals: [] }, 5000: { count: 1, individuals: [] } }
+      const stale: OwnedBySpecies = { 2: { count: 1, genders: null, individuals: [] }, 5000: { count: 1, genders: null, individuals: [] } }
       show({ shareBlob: encodeOwnedShare(stale) })
 
       await screen.findByText(/1 more species in that link are unknown/)
       fireEvent.click(screen.getByText('LOAD'))
-      expect(useOwnedStore.getState().bySpecies).toEqual({ 2: { count: 1, individuals: [] } })
+      expect(useOwnedStore.getState().bySpecies).toEqual({ 2: { count: 1, genders: null, individuals: [] } })
       expect(screen.getByText('1 species · 1 pal · from shared list')).toBeTruthy()
       // The count the confirm step already made was carried through rather than re-derived.
       expect(screen.getByText(/1 species in that list are unknown to this version and were left out/)).toBeTruthy()
@@ -702,7 +703,7 @@ describe('ImportPanel', () => {
     await waitFor(() => expect(screen.getByText(/link copied/)).toBeTruthy())
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('#/own/'))
     expect(writeText.mock.calls[0][0]).toBe(
-      `${window.location.origin}${window.location.pathname}#/own/${encodeOwnedShare({ 2: { count: 3, individuals: [] } })}`,
+      `${window.location.origin}${window.location.pathname}#/own/${encodeOwnedShare({ 2: { count: 3, genders: null, individuals: [] } })}`,
     )
   })
 
@@ -728,7 +729,7 @@ describe('ImportPanel', () => {
 
     expect(click).toHaveBeenCalled()
     expect(clicks).toEqual(['my-pals.palmatch.json'])
-    expect(await created[0].text()).toBe(shareJson({ 2: { count: 3, individuals: [] } }))
+    expect(await created[0].text()).toBe(shareJson({ 2: { count: 3, genders: null, individuals: [] } }))
     expect(screen.getByText(/saved my-pals\.palmatch\.json/)).toBeTruthy()
   })
 
@@ -926,5 +927,78 @@ describe('ImportPanel', () => {
 
     fireEvent.click(screen.getByText('FIND MY SAVE FOLDER'))
     await waitFor(() => expect(screen.getByText(/no Level\.sav in that folder/)).toBeTruthy())
+  })
+
+  describe('genders in the summary', () => {
+    it('shows each species’ split and totals it in the headline', () => {
+      useOwnedStore.getState().loadShared([[idx('Lamball'), 3, 2, 1]], 'mine')
+      show()
+
+      expect(screen.getByText('1 species · 3 pals · ♂2 ♀1 · from mine')).toBeTruthy()
+      expect(screen.getByLabelText('2 males, 1 female').textContent).toBe('♂2 ♀1')
+      // Mixed, so nothing to warn about — and nothing to nudge about either.
+      expect(screen.queryByText(/ONLY/)).toBeNull()
+      expect(screen.queryByText('re-import your save to see genders')).toBeNull()
+    })
+
+    it('flags a species you own only one gender of, and leaves a mixed one unflagged', () => {
+      useOwnedStore.getState().loadShared(
+        [
+          [idx('Lamball'), 4, 4, 0],
+          [idx('Cattiva'), 3, 1, 2],
+          [idx('Chikipi'), 2, 0, 2],
+        ],
+        'mine',
+      )
+      show()
+
+      expect(screen.getByLabelText('males only — cannot be bred with itself').textContent).toBe('♂ ONLY')
+      expect(screen.getByLabelText('females only — cannot be bred with itself').textContent).toBe('♀ ONLY')
+      // Exactly the two single-gender species, not the mixed one.
+      expect(screen.getAllByText(/ONLY/)).toHaveLength(2)
+      expect(screen.getByLabelText('1 male, 2 females')).toBeTruthy()
+      // The flagged rows drop the redundant split: ×4 and ♂ ONLY already say "four males".
+      expect(screen.queryByLabelText('4 males')).toBeNull()
+    })
+
+    it('never prints a zero half, since an ungendered pal could be the missing partner', () => {
+      // Three pals, two known male, one the save never gendered. `♀0` here would read as "no
+      // females" when the truth is "one pal we cannot speak for" — so only the confirmed half shows,
+      // and the ONLY marker stays away.
+      useOwnedStore.getState().loadShared([[idx('Lamball'), 3, 2, 0]], 'mine')
+      show()
+
+      expect(screen.getByLabelText('2 males').textContent).toBe('♂2')
+      expect(screen.queryByText(/♀/)).toBeNull()
+      expect(screen.queryByText(/ONLY/)).toBeNull()
+    })
+
+    it('shows no gender number at all for a list that never carried one, and says how to fix it', () => {
+      // A v1 list migrated out of localStorage, or a link from before genders existed.
+      useOwnedStore.getState().loadShared([[idx('Lamball'), 3]], 'mine')
+      show()
+
+      expect(screen.getByText('re-import your save to see genders')).toBeTruthy()
+      // Not one glyph anywhere: no split, no ONLY marker, and no total in the headline.
+      expect(screen.queryByText(/[♂♀]/)).toBeNull()
+      expect(screen.getByText('1 species · 3 pals · from mine')).toBeTruthy()
+    })
+
+    it('withholds the headline total when even one species is unknown, but still shows the rest', () => {
+      useOwnedStore.getState().loadShared(
+        [
+          [idx('Lamball'), 3, 2, 1],
+          [idx('Cattiva'), 2],
+        ],
+        'mine',
+      )
+      show()
+
+      expect(screen.getByText('2 species · 5 pals · from mine')).toBeTruthy()
+      expect(screen.getByText('re-import your save to see genders')).toBeTruthy()
+      // The species that does know its split still says so — the nudge is about the gaps, not a
+      // reason to hide what the list can vouch for.
+      expect(screen.getByLabelText('2 males, 1 female')).toBeTruthy()
+    })
   })
 })

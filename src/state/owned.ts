@@ -13,7 +13,18 @@ import type { ImportResult, Talents } from '../save/types.ts'
  * stays out of the entry chunk — nothing here may import it.
  */
 
+/**
+ * The key is a namespace, not the schema version — renaming it would strand every list already in
+ * a browser. The schema version lives in the envelope's `v`, which is what `validateStored` reads.
+ */
 export const OWNED_STORAGE_KEY = 'palmatch.owned.v1'
+
+/**
+ * Envelope version written by this build. v1 is still read forever: it predates the gender tallies,
+ * so its species migrate in with `genders: null` — "this list never said" — rather than with zeroes
+ * a UI would print as a fact.
+ */
+export const STORAGE_VERSION = 2
 
 /**
  * How many individuals of one species we keep. Counts stay exact; only the per-pal detail
@@ -29,8 +40,28 @@ export interface OwnedIndividual {
   talents: Talents | null
 }
 
+/** Confirmed male/female pals of one species. Never negative, never summing past its `count`. */
+export interface OwnedGenders {
+  males: number
+  females: number
+}
+
 export interface OwnedSpecies {
   count: number
+  /**
+   * The male/female split, or `null` for "this list never said" — a v1 list from before the tallies
+   * existed, or a share link that carried none.
+   *
+   * Counted over every pal in the import, never over `individuals`: that sample is capped at
+   * `MAX_STORED_INDIVIDUALS` and sorted by passive count, so a player with six Lamballs whose only
+   * female sorted out of the sample would be told they own none — and sent off to plan a pairing
+   * that cannot happen. A tally derived from the sample would be wrong exactly where it matters.
+   *
+   * Pals whose save row carried no gender at all are in neither half, so `males + females <= count`
+   * rather than `=`. That gap is why `onlyGender` refuses to call a species single-gender unless
+   * every pal in it is accounted for.
+   */
+  genders: OwnedGenders | null
   individuals: OwnedIndividual[]
 }
 
@@ -61,8 +92,11 @@ export interface OwnedActions {
 
 export type OwnedState = OwnedData & OwnedActions
 
-/** `[speciesIndex, count]`. Individuals are deliberately absent — see `encodeOwnedShare`. */
-export type SharedSpecies = [number, number]
+/**
+ * `[speciesIndex, count]`, or `[speciesIndex, count, males, females]` where the sharer knew the
+ * split. Individuals are deliberately absent — see `encodeOwnedShare`.
+ */
+export type SharedSpecies = [number, number] | [number, number, number, number]
 
 function emptyOwned(): OwnedData {
   return { bySpecies: {}, importedAt: null, sourceLabel: null, warnings: [], playerRows: 0 }
@@ -90,6 +124,39 @@ export interface OwnedRow {
   index: number
   pal: PalRecord
   count: number
+  genders: OwnedGenders | null
+}
+
+/**
+ * `'M'`/`'F'` when this species is one gender all the way through — the case a breeding plan has to
+ * know about, because such a species cannot be paired with itself at any count.
+ *
+ * Deliberately silent unless every pal is accounted for: a species with an ungendered row could be
+ * hiding the very partner this flag would claim does not exist. Silent below two pals as well —
+ * "you own one Lamball" already says it can't breed with itself, and marking every single-pal
+ * species would leave the flag on most of a real palbox and worth nothing to scan for.
+ */
+export function onlyGender(count: number, genders: OwnedGenders | null): GenderCode | null {
+  if (genders === null || count < 2 || genders.males + genders.females !== count) return null
+  if (genders.females === 0) return 'M'
+  if (genders.males === 0) return 'F'
+  return null
+}
+
+/**
+ * The list's overall split, or `null` when even one rendered species doesn't know its own. Summing
+ * over just the species that have tallies would print a headline total nothing in the grid below it
+ * adds up to, which is the same lie in a different place.
+ */
+export function genderTotals(rows: OwnedRow[]): OwnedGenders | null {
+  let males = 0
+  let females = 0
+  for (const row of rows) {
+    if (row.genders === null) return null
+    males += row.genders.males
+    females += row.genders.females
+  }
+  return rows.length === 0 ? null : { males, females }
 }
 
 /**
@@ -101,33 +168,68 @@ export interface OwnedRow {
 export function ownedRows(pals: PalRecord[], bySpecies: OwnedBySpecies): OwnedRow[] {
   return ownedSpeciesIndices(bySpecies)
     .filter((index) => pals[index] !== undefined)
-    .map((index) => ({ index, pal: pals[index], count: bySpecies[index].count }))
+    .map((index) => ({
+      index,
+      pal: pals[index],
+      count: bySpecies[index].count,
+      genders: bySpecies[index].genders,
+    }))
     .sort((a, b) => b.count - a.count || a.pal.name.localeCompare(b.pal.name))
+}
+
+/** The running tally per species, before the individuals are sorted and capped. */
+interface SpeciesTally {
+  count: number
+  males: number
+  females: number
+  individuals: OwnedIndividual[]
 }
 
 /**
  * Folds the parser's flat pal list into the stored shape. Sorting by passive count before the
  * cap is what makes the kept examples the useful ones; `Array.sort` is stable, so pals with equal
  * passive counts stay in save order.
+ *
+ * The genders are tallied in the first loop, over every pal — the cap in the second loop can then
+ * throw away individuals without ever touching a number the UI prints.
  */
 function foldOwned(result: ImportResult): OwnedBySpecies {
-  const bySpecies: OwnedBySpecies = {}
+  const tallies: Record<number, SpeciesTally> = {}
   for (const pal of result.owned) {
-    const entry = (bySpecies[pal.speciesIndex] ??= { count: 0, individuals: [] })
-    entry.count++
-    entry.individuals.push({ gender: pal.gender, passives: pal.passives, talents: pal.talents })
+    const tally = (tallies[pal.speciesIndex] ??= { count: 0, males: 0, females: 0, individuals: [] })
+    tally.count++
+    if (pal.gender === 'M') tally.males++
+    else if (pal.gender === 'F') tally.females++
+    tally.individuals.push({ gender: pal.gender, passives: pal.passives, talents: pal.talents })
   }
-  for (const entry of Object.values(bySpecies)) {
-    entry.individuals.sort((a, b) => b.passives.length - a.passives.length)
-    if (entry.individuals.length > MAX_STORED_INDIVIDUALS) entry.individuals.length = MAX_STORED_INDIVIDUALS
+
+  const bySpecies: OwnedBySpecies = {}
+  for (const [key, tally] of Object.entries(tallies)) {
+    tally.individuals.sort((a, b) => b.passives.length - a.passives.length)
+    if (tally.individuals.length > MAX_STORED_INDIVIDUALS) tally.individuals.length = MAX_STORED_INDIVIDUALS
+    bySpecies[Number(key)] = {
+      count: tally.count,
+      genders: { males: tally.males, females: tally.females },
+      individuals: tally.individuals,
+    }
   }
   return bySpecies
 }
 
-/** A shared list carries counts only, so every species arrives with an empty individuals list. */
+/**
+ * A shared list carries counts (and, from a build that had them, the split) but never individuals.
+ * A link made before genders existed arrives as `null`, which the summary renders as "unknown"
+ * rather than as a species with no males and no females.
+ */
 function fromShared(species: SharedSpecies[]): OwnedBySpecies {
   const bySpecies: OwnedBySpecies = {}
-  for (const [index, count] of species) bySpecies[index] = { count, individuals: [] }
+  for (const entry of species) {
+    bySpecies[entry[0]] = {
+      count: entry[1],
+      genders: entry.length === 4 ? { males: entry[2], females: entry[3] } : null,
+      individuals: [],
+    }
+  }
   return bySpecies
 }
 
@@ -178,16 +280,45 @@ function toIndividual(value: unknown): OwnedIndividual | null {
   return { gender: v.gender as GenderCode | null, passives: v.passives as string[], talents: toTalents(v.talents) }
 }
 
+/** A tally is a whole number of pals: not fractional, not negative, not past what can be added up. */
+function isTally(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
+/**
+ * One stored `genders` block, or `'invalid'` when it is present in a shape this build won't print.
+ * `null` is a legitimate stored value — "this list never said" — so it can't double as the failure.
+ *
+ * The `males + females <= count` check is the load-bearing one: a blob claiming three males of a
+ * species it also says there are two of would render a split the count beside it contradicts.
+ */
+function toGenders(value: unknown, count: number): OwnedGenders | null | 'invalid' {
+  if (value === null) return null
+  // Catches the missing field too: `typeof undefined` is `'undefined'`, so an absent `genders` on a
+  // v2 entry lands here rather than quietly becoming "unknown".
+  if (typeof value !== 'object') return 'invalid'
+  const g = value as Record<string, unknown>
+  if (!isTally(g.males) || !isTally(g.females)) return 'invalid'
+  if (g.males + g.females > count) return 'invalid'
+  return { males: g.males, females: g.females }
+}
+
 /**
  * Validates a hydrated envelope field by field rather than trusting `JSON.parse`. The stored blob
  * is user-editable and survives across app versions, so "it parsed as JSON" says nothing about
  * whether `bySpecies` still holds what this build expects — and a bad shape here would surface as
  * an undefined-index crash inside a panel, far from its cause.
+ *
+ * Two envelope versions are accepted, and a malformed one of either is rejected identically. v1 is
+ * the shape shipped before the gender tallies: its species come in with `genders: null`, keeping
+ * every count and stored individual, and any `genders` a v1 envelope happens to carry is ignored
+ * outright — this build didn't write it, so it isn't a number this build will vouch for.
  */
 function validateStored(parsed: unknown): OwnedData | null {
   if (typeof parsed !== 'object' || parsed === null) return null
   const envelope = parsed as Record<string, unknown>
-  if (envelope.v !== 1) return null
+  if (envelope.v !== 1 && envelope.v !== STORAGE_VERSION) return null
+  const hasGenders = envelope.v === STORAGE_VERSION
   const data = envelope.data
   if (typeof data !== 'object' || data === null) return null
   const d = data as Record<string, unknown>
@@ -203,6 +334,11 @@ function validateStored(parsed: unknown): OwnedData | null {
     // `Number.isInteger(1e21)` is true, so a plain integer test admits counts no arithmetic
     // downstream can add up. A count of 1.5, 1e21 or Infinity pals is a hand-edited blob either way.
     if (typeof entry.count !== 'number' || !Number.isSafeInteger(entry.count) || entry.count <= 0) return null
+    // A v2 entry must say something about genders, even if that something is `null`; a v2 blob
+    // missing the field is not one this build wrote, and guessing at it is what this whole design
+    // exists to avoid.
+    const genders = hasGenders ? toGenders(entry.genders, entry.count) : null
+    if (genders === 'invalid') return null
     if (!Array.isArray(entry.individuals)) return null
     const individuals: OwnedIndividual[] = []
     for (const raw of entry.individuals.slice(0, MAX_STORED_INDIVIDUALS)) {
@@ -210,7 +346,7 @@ function validateStored(parsed: unknown): OwnedData | null {
       if (individual === null) return null
       individuals.push(individual)
     }
-    bySpecies[index] = { count: entry.count, individuals }
+    bySpecies[index] = { count: entry.count, genders, individuals }
   }
 
   if (d.importedAt !== null && typeof d.importedAt !== 'string') return null
@@ -239,6 +375,9 @@ function hydrate(): OwnedData {
     console.warn(`palmatch: ignoring ${OWNED_STORAGE_KEY} — not valid JSON`)
     return emptyOwned()
   }
+  // A v1 blob is migrated into memory on every load and only rewritten as v2 when something
+  // actually changes the store. Nothing is gained by rewriting it eagerly, and leaving it alone
+  // means a player who opens an older build in another tab still finds their list where it was.
   const data = validateStored(parsed)
   if (data === null) {
     console.warn(`palmatch: ignoring ${OWNED_STORAGE_KEY} — not a list this version understands`)
@@ -258,7 +397,9 @@ function persist(data: OwnedData): void {
   // the full store, actions included, and "JSON.stringify drops functions" is not a contract worth
   // resting persistence on — a future action that closes over data would be silently written out.
   const { bySpecies, importedAt, sourceLabel, warnings, playerRows } = data
-  writeStorage(JSON.stringify({ v: 1, data: { bySpecies, importedAt, sourceLabel, warnings, playerRows } }))
+  writeStorage(
+    JSON.stringify({ v: STORAGE_VERSION, data: { bySpecies, importedAt, sourceLabel, warnings, playerRows } }),
+  )
 }
 
 // ---- store ----

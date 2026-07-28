@@ -537,7 +537,7 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
       return
     }
     clipboard.writeText(link).then(
-      () => setNote('link copied — it carries species and counts, not individual pals'),
+      () => setNote('link copied — it carries species, counts and genders, not individual pals'),
       () => {
         window.prompt('copy this link', link)
         setNote('copy the link from the box')

@@ -936,7 +936,9 @@ button {
  */
 .import-panel {
   gap: 12px;
-  max-width: 680px;
+  /* 760 rather than 680: the owned grid's cells carry a gender split and a ONLY marker beside the
+     count now, and at the old width the pal caption inside them wrapped onto a second line. */
+  max-width: 760px;
   max-height: 84vh;
   overflow-y: auto;
 }
@@ -1109,7 +1111,8 @@ button {
 
 .owned-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  /* 200 rather than 180: the cells gained a gender split and a ONLY marker to the right of the count. */
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 4px;
   margin: 0;
   padding: 0;
@@ -1125,10 +1128,40 @@ button {
   background: var(--surface-alt);
 }
 
+.owned-tally {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
 .owned-count {
   flex: none;
   color: var(--accent);
   font-size: 12px;
+}
+
+/* Detail beside the count, not a second headline number — hence dim rather than accent. */
+.owned-split {
+  flex: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/*
+ * The one thing in this grid worth interrupting a scan for: several of a species and still no
+ * pairing possible. Outlined rather than filled — a solid accent block on every affected row would
+ * read as a bar chart across a dense grid.
+ */
+.owned-only {
+  flex: none;
+  padding: 0 3px;
+  border: 2px solid var(--accent);
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 1px;
+  white-space: nowrap;
 }
 
 .share-note {

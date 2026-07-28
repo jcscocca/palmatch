@@ -14,7 +14,15 @@ import type { OwnedBySpecies, SharedSpecies } from './owned.ts'
  * out of the entry.
  */
 
-/** Version tag inside both the share blob and the `.palmatch.json` file. */
+/**
+ * Version tag inside both the share blob and the `.palmatch.json` file.
+ *
+ * Deliberately still 1 now that links can carry genders. The build that shipped before them refuses
+ * any payload whose `v` isn't 1 and any `species` entry that isn't exactly two elements — so the
+ * split rides in a *separate*, optional `g` field, aligned to `species`, and that build ignores it
+ * and reads the counts as it always did. Bumping `v`, or widening the pairs, would have made every
+ * new link a hard failure for anyone who hadn't reloaded the app.
+ */
 export const SHARE_VERSION = 1
 
 /**
@@ -31,9 +39,24 @@ const MAX_SHARE_BLOB = 16384
  */
 const MAX_SHARE_BYTES = 1024 * 1024
 
+/** The decoded payload, with `species` and `g` already merged into one entry per species. */
 export interface OwnedSharePayload {
   v: number
   species: SharedSpecies[]
+}
+
+/** `[males, females]`, or `null` for a species whose split the sharer did not know. */
+type SharedGenders = [number, number] | null
+
+/**
+ * What actually goes over the wire, in the two fields an older build can read past. `g` is absent
+ * whenever there is nothing to say, so a list with no genders serialises to the exact bytes it did
+ * before this feature — every link already in a Discord scrollback still decodes to itself.
+ */
+interface ShareWire {
+  v: number
+  species: Array<[number, number]>
+  g?: SharedGenders[]
 }
 
 function toBase64Url(bytes: Uint8Array): string {
@@ -60,14 +83,25 @@ function fromBase64Url(blob: string): Uint8Array | null {
   }
 }
 
-/** The share payload: species indices and counts, ascending by index so the blob is deterministic. */
+/**
+ * The share payload: species indices, counts, and the male/female split where the list has one,
+ * ascending by index so the blob is deterministic.
+ */
 export function shareSpecies(bySpecies: OwnedBySpecies): SharedSpecies[] {
-  return ownedSpeciesIndices(bySpecies).map((index) => [index, bySpecies[index].count])
+  return ownedSpeciesIndices(bySpecies).map((index): SharedSpecies => {
+    const { count, genders } = bySpecies[index]
+    return genders === null ? [index, count] : [index, count, genders.males, genders.females]
+  })
 }
 
 export function shareJson(bySpecies: OwnedBySpecies): string {
-  const payload: OwnedSharePayload = { v: SHARE_VERSION, species: shareSpecies(bySpecies) }
-  return JSON.stringify(payload)
+  const species = shareSpecies(bySpecies)
+  const g = species.map((entry): SharedGenders => (entry.length === 4 ? [entry[2], entry[3]] : null))
+  const wire: ShareWire = { v: SHARE_VERSION, species: species.map((entry) => [entry[0], entry[1]]) }
+  // Only when at least one species has something to say: an all-unknown `g` would be a column of
+  // nulls that costs bytes, changes every existing link's blob, and tells the recipient nothing.
+  if (g.some((entry) => entry !== null)) wire.g = g
+  return JSON.stringify(wire)
 }
 
 /**
@@ -88,20 +122,47 @@ export function ownedShareLink(bySpecies: OwnedBySpecies, location: Location = w
   return `${location.origin}${location.pathname}#/own/${encodeOwnedShare(bySpecies)}`
 }
 
+/**
+ * `isSafeInteger` rather than `isInteger`, matched by the store's `validateStored`:
+ * `Number.isInteger(1e21)` is true, and no species index or pal count past 2^53 is a number
+ * anything downstream can do arithmetic with.
+ */
+function isWholeNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value)
+}
+
 function validatePayload(parsed: unknown): OwnedSharePayload | null {
   if (typeof parsed !== 'object' || parsed === null) return null
   const p = parsed as Record<string, unknown>
   if (p.v !== SHARE_VERSION || !Array.isArray(p.species)) return null
+  // Absent in every link made before genders existed, and in every list with none to carry. When
+  // present it must line up with `species` exactly — a `g` of the wrong length is a payload whose
+  // splits cannot be attributed to species with any confidence, and guessing would misreport them.
+  const g: unknown = p.g
+  if (g !== undefined && (!Array.isArray(g) || g.length !== p.species.length)) return null
+  const splits = g as unknown[] | undefined
+
   const species: SharedSpecies[] = []
-  for (const pair of p.species) {
+  for (let i = 0; i < p.species.length; i++) {
+    const pair: unknown = p.species[i]
     if (!Array.isArray(pair) || pair.length !== 2) return null
     const [index, count] = pair as unknown[]
-    // `isSafeInteger` rather than `isInteger` on both, matched by the store's `validateStored`:
-    // `Number.isInteger(1e21)` is true, and neither a species index nor a pal count past 2^53 is a
-    // number anything downstream can do arithmetic with.
-    if (typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0) return null
-    if (typeof count !== 'number' || !Number.isSafeInteger(count) || count <= 0) return null
-    species.push([index, count])
+    if (!isWholeNumber(index) || index < 0) return null
+    if (!isWholeNumber(count) || count <= 0) return null
+
+    const split: unknown = splits?.[i]
+    if (split === undefined || split === null) {
+      species.push([index, count])
+      continue
+    }
+    if (!Array.isArray(split) || split.length !== 2) return null
+    const [males, females] = split as unknown[]
+    if (!isWholeNumber(males) || males < 0 || !isWholeNumber(females) || females < 0) return null
+    // Ungendered pals are in neither half, so the split may fall short of the count — but a split
+    // that outruns it describes a species that cannot exist, and would print a tally contradicting
+    // the `×N` beside it.
+    if (males + females > count) return null
+    species.push([index, count, males, females])
   }
   return { v: SHARE_VERSION, species }
 }

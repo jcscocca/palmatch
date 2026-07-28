@@ -1,8 +1,29 @@
 import { useMemo } from 'react'
-import type { PalRecord } from '../engine/types.ts'
-import type { OwnedBySpecies } from '../state/owned.ts'
-import { ownedRows } from '../state/owned.ts'
+import type { GenderCode, PalRecord } from '../engine/types.ts'
+import type { OwnedBySpecies, OwnedGenders } from '../state/owned.ts'
+import { genderTotals, onlyGender, ownedRows } from '../state/owned.ts'
 import { PalTile } from './PalTile.tsx'
+
+const GLYPH: Record<GenderCode, string> = { M: '♂', F: '♀' }
+const WORD: Record<GenderCode, string> = { M: 'male', F: 'female' }
+
+/**
+ * `♂2 ♀1`, with either half dropped when it is zero.
+ *
+ * A zero is never printed, and that is a rule about honesty rather than about terseness: the split
+ * only accounts for pals whose save row carried a gender, so `♀0` beside `×3` would read as "no
+ * females" when the truth may be "two males and one the save never said". The halves it does print
+ * are counts of confirmed pals, which is a claim this list can always stand behind.
+ */
+function splitLabel(genders: OwnedGenders): { text: string; label: string } {
+  const parts: Array<[GenderCode, number]> = []
+  if (genders.males > 0) parts.push(['M', genders.males])
+  if (genders.females > 0) parts.push(['F', genders.females])
+  return {
+    text: parts.map(([g, n]) => `${GLYPH[g]}${n}`).join(' '),
+    label: parts.map(([g, n]) => `${n} ${WORD[g]}${n === 1 ? '' : 's'}`).join(', '),
+  }
+}
 
 export interface OwnedSummaryProps {
   pals: PalRecord[]
@@ -47,17 +68,33 @@ export function OwnedSummary({
   // Summed over the rows actually rendered, not over the whole store: a list carrying species this
   // build doesn't have would otherwise print a total the grid below it can't account for.
   const total = rows.reduce((sum, row) => sum + row.count, 0)
+  // All-or-nothing, by `genderTotals`: either every rendered species knows its split and the
+  // headline can carry one, or the nudge below asks for a re-import. The two states are exclusive,
+  // so the line never prints a total that only covers part of the grid.
+  const totals = useMemo(() => genderTotals(rows), [rows])
+  const unknown = totals === null && rows.length > 0
+  // Same zero-dropping as the cells, for the same reason — see `splitLabel`.
+  const totalsText = totals === null ? '' : splitLabel(totals).text
   // One string rather than a row of JSX expressions: this line is the panel's headline, and a
   // sentence split across a dozen text nodes is one no assistive tech or test can read as a whole.
   // Only past one player: a single-player world has exactly one player row, and calling that "a
   // guild of 1" is noise on every solo save — the line is there to explain a shared palbox.
   const countLine = `${rows.length} species · ${total} pal${total === 1 ? '' : 's'}${
-    playerRows > 1 ? ` · guild of ${playerRows} players` : ''
-  }${sourceLabel === null ? '' : ` · from ${sourceLabel}`}`
+    totalsText === '' ? '' : ` · ${totalsText}`
+  }${playerRows > 1 ? ` · guild of ${playerRows} players` : ''}${
+    sourceLabel === null ? '' : ` · from ${sourceLabel}`
+  }`
 
   return (
     <div className="owned-summary">
       <p className="count-line">{countLine}</p>
+
+      {/*
+        One line for the whole grid, not one per cell. A list from before genders were stored, or
+        from an older share link, has no split to show — and inventing zeroes for it would be worse
+        than saying nothing, so the cells stay quiet and this says how to fix it.
+      */}
+      {unknown && <p className="panel-note">re-import your save to see genders</p>}
 
       {rows.length === 0 && (
         <p className="panel-note">no pals palmatch could place — check that this was the world you meant</p>
@@ -73,14 +110,37 @@ export function OwnedSummary({
 
       {rows.length > 0 && (
         <ul className="owned-grid" aria-label="owned pals">
-          {rows.map(({ index, pal, count }) => (
-            <li className="owned-cell" key={index}>
-              <PalTile pal={pal} size="sm" />
-              <span className="owned-count" aria-label={`${count} owned`}>
-                ×{count}
-              </span>
-            </li>
-          ))}
+          {rows.map(({ index, pal, count, genders }) => {
+            const only = onlyGender(count, genders)
+            // Suppressed under the ONLY marker rather than shown beside it: that marker only fires
+            // when every pal is accounted for, so `×4` and `♂ ONLY` already say "four males" and
+            // `♂4 ♂ ONLY` would print the same fact twice in a grid with no room for it.
+            const split = genders === null || only !== null ? null : splitLabel(genders)
+            return (
+              <li className="owned-cell" key={index}>
+                <PalTile pal={pal} size="sm" />
+                <span className="owned-tally">
+                  <span className="owned-count" aria-label={`${count} owned`}>
+                    ×{count}
+                  </span>
+                  {split !== null && split.text !== '' && (
+                    <span className="owned-split" aria-label={split.label}>
+                      {split.text}
+                    </span>
+                  )}
+                  {only !== null && (
+                    <span
+                      className="owned-only"
+                      aria-label={`${WORD[only]}s only — cannot be bred with itself`}
+                      title={`every ${pal.name} you own is ${WORD[only]} — this species needs a partner from somewhere else`}
+                    >
+                      {GLYPH[only]} ONLY
+                    </span>
+                  )}
+                </span>
+              </li>
+            )
+          })}
         </ul>
       )}
 
