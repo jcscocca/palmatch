@@ -21,9 +21,12 @@ const MIN_SAVE_BYTES = 24
 /**
  * Ceiling on the *declared* decompressed length, checked before anything is allocated. Real worlds
  * top out in the low hundreds of MB decompressed; a header claiming more is either corrupt or a
- * save we could not walk without exhausting the tab anyway.
+ * save we could not walk without exhausting the tab anyway. Set to 512 MB rather than 1 GB: a
+ * crafted ~1 MB file can legitimately drive an allocation this large before the GVAS magic check
+ * rejects it, so the ceiling is the worst-case worker footprint, and halving it costs real saves
+ * nothing.
  */
-export const MAX_DECOMPRESSED_BYTES = 1024 * 1024 * 1024
+export const MAX_DECOMPRESSED_BYTES = 512 * 1024 * 1024
 
 export interface SaveWrapper {
   /** Three ASCII bytes: `PlZ`, `PlM` or `CNK`. */

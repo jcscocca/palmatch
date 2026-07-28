@@ -138,6 +138,13 @@ export function parseOwnedShareJson(text: string): OwnedSharePayload | null {
  * boundary, and counted so the panel can say so out loud.
  */
 export function sanitizeShare(species: SharedSpecies[], palCount: number): { species: SharedSpecies[]; dropped: number } {
-  const kept = species.filter(([index]) => index < palCount)
+  // Deduped as well as bounds-checked: the store keys by species, so a crafted link repeating one
+  // index 40k times would otherwise have the confirm step promise 40000 species and then store 1.
+  // Last entry for an index wins, matching what `fromShared` would have done anyway.
+  const byIndex = new Map<number, SharedSpecies>()
+  for (const entry of species) {
+    if (entry[0] < palCount) byIndex.set(entry[0], entry)
+  }
+  const kept = [...byIndex.values()]
   return { species: kept, dropped: species.length - kept.length }
 }

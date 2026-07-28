@@ -35,7 +35,7 @@ palmatch just states it plainly instead of leaving the licensing implicit.
 ## pako
 
 [pako](https://github.com/nodeca/pako) is a JavaScript port of zlib used to inflate the `PlZ1`/
-`PlZ2` (non-Oodle) save compression paths. MIT-licensed.
+`PlZ2` (non-Oodle) save compression paths. Licensed `(MIT AND Zlib)`.
 
 ## Game data & assets
 

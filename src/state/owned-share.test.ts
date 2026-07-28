@@ -9,7 +9,7 @@ import {
   shareJson,
   shareSpecies,
 } from './owned-share.ts'
-import type { OwnedBySpecies } from './owned.ts'
+import type { OwnedBySpecies, SharedSpecies } from './owned.ts'
 
 const SAMPLE: OwnedBySpecies = {
   3: { count: 2, individuals: [{ gender: 'F', passives: ['Swift'], talents: null }] },
@@ -102,5 +102,32 @@ describe('share codec', () => {
 
   it('drops species the receiving build does not have, and says how many', () => {
     expect(sanitizeShare([[1, 2], [900, 1]], 200)).toEqual({ species: [[1, 2]], dropped: 1 })
+  })
+})
+
+describe('sanitizeShare deduping', () => {
+  it('collapses a crafted link that repeats one index, so the confirm cannot overpromise', () => {
+    // The store keys by species: 40k repeats of index 3 are one species. Without deduping the
+    // confirm step would offer "40000 species" and then install exactly one.
+    const repeated: SharedSpecies[] = Array.from({ length: 40_000 }, () => [3, 1])
+    const { species, dropped } = sanitizeShare(repeated, 299)
+    expect(species).toEqual([[3, 1]])
+    expect(dropped).toBe(39_999)
+  })
+
+  it('keeps distinct species and still drops out-of-range ones', () => {
+    const { species, dropped } = sanitizeShare(
+      [
+        [1, 2],
+        [5, 1],
+        [999, 4],
+      ],
+      299,
+    )
+    expect(species).toEqual([
+      [1, 2],
+      [5, 1],
+    ])
+    expect(dropped).toBe(1)
   })
 })
