@@ -984,6 +984,16 @@ describe('ImportPanel', () => {
       expect(screen.getByText('1 species · 3 pals · from mine')).toBeTruthy()
     })
 
+    it('tells a share recipient to ask the sharer, since they have no save of their own', () => {
+      // `loadShared` defaults the label to 'shared list'. Telling that person to "re-import your
+      // save" points at a file they never had — only the sharer can refresh a pre-gender list.
+      useOwnedStore.getState().loadShared([[idx('Lamball'), 3]])
+      show()
+
+      expect(screen.getByText(/ask whoever sent it to re-import and re-share/)).toBeTruthy()
+      expect(screen.queryByText('re-import your save to see genders')).toBeNull()
+    })
+
     it('withholds the headline total when even one species is unknown, but still shows the rest', () => {
       useOwnedStore.getState().loadShared(
         [

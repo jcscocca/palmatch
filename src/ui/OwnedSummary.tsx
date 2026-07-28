@@ -73,6 +73,9 @@ export function OwnedSummary({
   // so the line never prints a total that only covers part of the grid.
   const totals = useMemo(() => genderTotals(rows), [rows])
   const unknown = totals === null && rows.length > 0
+  // A recipient of a pre-gender share link has no save of their own to re-import; only the sharer
+  // can fix that list. `loadShared` is the sole writer of this label (src/state/owned.ts).
+  const fromShare = sourceLabel === 'shared list'
   // Same zero-dropping as the cells, for the same reason — see `splitLabel`.
   const totalsText = totals === null ? '' : splitLabel(totals).text
   // One string rather than a row of JSX expressions: this line is the panel's headline, and a
@@ -94,7 +97,13 @@ export function OwnedSummary({
         from an older share link, has no split to show — and inventing zeroes for it would be worse
         than saying nothing, so the cells stay quiet and this says how to fix it.
       */}
-      {unknown && <p className="panel-note">re-import your save to see genders</p>}
+      {unknown && (
+        <p className="panel-note">
+          {fromShare
+            ? 'this shared list predates genders — ask whoever sent it to re-import and re-share'
+            : 're-import your save to see genders'}
+        </p>
+      )}
 
       {rows.length === 0 && (
         <p className="panel-note">no pals palmatch could place — check that this was the world you meant</p>

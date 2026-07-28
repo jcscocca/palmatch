@@ -59,8 +59,9 @@ never leaves the browser tab.** The owned list is kept in `localStorage`
 
 **Share links & `.palmatch.json`**
 
-SHARE copies a `#/own/<blob>` link — deflate + base64url of species indices and counts, nothing
-else (no passives, no IVs, no player names). DOWNLOAD writes `my-pals.palmatch.json` with the same
+SHARE copies a `#/own/<blob>` link — deflate + base64url of species indices, counts, and each
+species' male/female split, nothing else (no passives, no IVs, no pal names or nicknames, no player
+names or IDs). DOWNLOAD writes `my-pals.palmatch.json` with the same
 payload, droppable back into the panel on any machine. Opening a shared link asks for confirmation
 before it replaces the recipient's list, and any species the receiving build doesn't recognize are
 dropped, with a count shown.
