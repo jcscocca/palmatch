@@ -858,6 +858,10 @@ button {
   box-shadow: 6px 6px 0 #000;
 }
 
+.search-palette {
+  max-width: 760px;
+}
+
 .palette-head {
   display: flex;
   align-items: baseline;
@@ -910,6 +914,22 @@ button {
   border: 2px solid transparent;
   background: var(--surface-alt);
   cursor: pointer;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  align-items: stretch;
+  gap: 6px;
+}
+
+.result-grid .result-row {
+  min-width: 0;
+  padding: 10px 6px;
+}
+
+.result-grid .pal-tile {
+  height: 100%;
 }
 
 .result-active {

@@ -14,6 +14,7 @@ export interface SearchPaletteProps {
 
 const DIGIT_SLOTS: Record<string, 'a' | 'b' | 't'> = { '1': 'a', '2': 'b', '3': 't' }
 const LISTBOX_ID = 'palette-listbox'
+const ALPHA_COLLATOR = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
 
 function optionId(row: number): string {
   return `palette-option-${row}`
@@ -39,7 +40,16 @@ export function SearchPalette({ forSlot, onClose }: SearchPaletteProps) {
   const downTargetRef = useRef<EventTarget | null>(null)
   const restoreFrameRef = useRef<number | null>(null)
 
-  const results = useMemo(() => searchPals(ds.pals, query, typeFilter), [ds.pals, query, typeFilter])
+  const browsing = query.trim() === ''
+  const results = useMemo(() => {
+    if (!browsing) return searchPals(ds.pals, query, typeFilter)
+
+    return ds.pals
+      .map((pal, index) => ({ pal, index }))
+      .filter(({ pal }) => typeFilter.length === 0 || pal.types.some((type) => typeFilter.includes(type)))
+      .sort((a, b) => ALPHA_COLLATOR.compare(a.pal.name, b.pal.name))
+      .map(({ index }) => index)
+  }, [browsing, ds.pals, query, typeFilter])
   const active = results.length === 0 ? -1 : Math.min(activeRow, results.length - 1)
 
   useEffect(() => {
@@ -158,7 +168,7 @@ export function SearchPalette({ forSlot, onClose }: SearchPaletteProps) {
         if (fromBackdrop && e.target === dialogRef.current) onClose()
       }}
     >
-      <div className="palette">
+      <div className="palette search-palette">
         <div className="palette-head">
           <span className="label-caps">
             SEARCH
@@ -187,7 +197,12 @@ export function SearchPalette({ forSlot, onClose }: SearchPaletteProps) {
 
         <TypeChips selected={typeFilter} onToggle={toggleType} />
 
-        <ul className="result-list" id={LISTBOX_ID} role="listbox" aria-label="search results">
+        <ul
+          className={`result-list${browsing ? ' result-grid' : ''}`}
+          id={LISTBOX_ID}
+          role="listbox"
+          aria-label={browsing ? 'all pals alphabetically' : 'search results'}
+        >
           {results.map((index, row) => (
             <li
               key={ds.pals[index].id}
@@ -198,15 +213,13 @@ export function SearchPalette({ forSlot, onClose }: SearchPaletteProps) {
               onMouseEnter={() => setActiveRow(row)}
               onClick={() => promote(forSlot ?? 'a', row)}
             >
-              <PalTile pal={ds.pals[index]} size="sm" />
+              <PalTile pal={ds.pals[index]} size={browsing ? 'md' : 'sm'} />
             </li>
           ))}
         </ul>
 
         {results.length === 0 && (
-          <p className="palette-empty">
-            {query.trim() === '' ? `type to search ${ds.pals.length} pals` : 'no pals match'}
-          </p>
+          <p className="palette-empty">{browsing ? 'no pals match these types' : 'no pals match'}</p>
         )}
       </div>
     </dialog>

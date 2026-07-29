@@ -44,11 +44,24 @@ function expected(query: string): number[] {
 }
 
 describe('SearchPalette', () => {
+  it('opens with every pal in an alphabetized photo grid', () => {
+    open('a')
+    const list = screen.getByRole('listbox', { name: 'all pals alphabetically' })
+    const options = screen.getAllByRole('option')
+    const expectedNames = ds.pals.map((pal) => pal.name).sort((a, b) => a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' }))
+
+    expect(list.classList.contains('result-grid')).toBe(true)
+    expect(options).toHaveLength(ds.pals.length)
+    expect(options.map((option) => option.querySelector('.pal-name')?.textContent)).toEqual(expectedNames)
+    expect(options[0].querySelector('.pal-sprite')).not.toBeNull()
+  })
+
   it('lists matches for a partial name', () => {
     const input = open('a')
-    expect(screen.queryByText('Lamball')).toBeNull()
+    expect(screen.getByText('Lamball')).toBeTruthy()
     type(input, 'lam')
     expect(screen.getByText('Lamball')).toBeTruthy()
+    expect(screen.getByRole('listbox', { name: 'search results' }).classList.contains('result-grid')).toBe(false)
     expect(screen.getAllByRole('option')).toHaveLength(expected('lam').length)
   })
 
