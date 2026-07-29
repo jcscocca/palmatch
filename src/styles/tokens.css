@@ -1,7 +1,8 @@
 :root {
   --bg: #0f1115; --surface: #161920; --surface-alt: #1a1d24;
-  --border: #2a2f3a; --text: #e8eaf0; --text-dim: #6b7385; --text-faint: #4a5264;
+  --border: #2a2f3a; --text: #e8eaf0; --text-dim: #80899c; --text-faint: #4a5264;
   --accent: #5ee9b5; --accent-bg: #12241c;
+  --font-label: 11px; --font-meta: 12px; --font-control: 13px; --font-body: 14px;
 }
 * { box-sizing: border-box; border-radius: 0; }
 body { background: var(--bg); color: var(--text); font-family: ui-monospace, 'SF Mono', Menlo, monospace; margin: 0; }

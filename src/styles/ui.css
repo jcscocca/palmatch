@@ -12,7 +12,7 @@ button {
 }
 
 .label-caps {
-  font-size: 11px;
+  font-size: var(--font-label);
   letter-spacing: 2px;
   color: var(--text-dim);
   text-transform: uppercase;
@@ -60,7 +60,7 @@ button {
   border: 2px solid var(--border);
   background: var(--surface);
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-control);
   letter-spacing: 2px;
 }
 
@@ -82,7 +82,7 @@ button {
   background: var(--surface-alt);
   color: var(--text-dim);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-meta);
 }
 
 /* ---- slots ---- */
@@ -132,7 +132,7 @@ button {
 }
 
 .slot-hint {
-  font-size: 11px;
+  font-size: var(--font-control);
   color: var(--text-dim);
 }
 
@@ -279,7 +279,7 @@ button {
 }
 
 .pal-caption {
-  font-size: 11px;
+  font-size: var(--font-meta);
   color: var(--text-dim);
   letter-spacing: 1px;
 }
@@ -321,7 +321,7 @@ button {
   border: 2px solid var(--border);
   background: var(--surface-alt);
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-meta);
   line-height: 1;
 }
 
@@ -341,7 +341,7 @@ button {
   border: 2px solid var(--border);
   background: var(--surface-alt);
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-meta);
   letter-spacing: 1px;
   text-transform: uppercase;
 }
@@ -376,7 +376,7 @@ button {
   border-right: 2px solid var(--border);
   background: var(--surface);
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-control);
   letter-spacing: 2px;
   white-space: nowrap;
 }
@@ -411,14 +411,14 @@ button {
 .panel-note {
   margin: 0;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--font-body);
   line-height: 1.6;
 }
 
 .count-line {
   margin: 0 0 10px;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-label);
   letter-spacing: 2px;
   text-transform: uppercase;
 }
@@ -429,7 +429,7 @@ button {
   border: 2px solid var(--border);
   background: var(--surface-alt);
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-meta);
   letter-spacing: 1px;
   white-space: nowrap;
 }
@@ -490,7 +490,7 @@ button {
 .filter-input {
   flex: 1 1 220px;
   padding: 7px 10px;
-  font-size: 12px;
+  font-size: var(--font-body);
 }
 
 .table-scroll {
@@ -509,7 +509,7 @@ button {
   padding: 6px 8px;
   border-bottom: 2px solid var(--border);
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-meta);
   font-weight: 400;
   letter-spacing: 2px;
   text-align: left;
@@ -562,14 +562,14 @@ button {
 
 .lock-line {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-control);
   letter-spacing: 1px;
 }
 
 .cond-line {
   margin: 0;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-meta);
   letter-spacing: 1px;
   text-align: center;
 }
@@ -579,7 +579,7 @@ button {
   align-items: baseline;
   gap: 6px;
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-control);
 }
 
 /* ---- chains ---- */
@@ -594,12 +594,12 @@ button {
 
 .depth-select {
   padding: 5px 8px;
-  font-size: 12px;
+  font-size: var(--font-control);
 }
 
 .chain-mode {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-meta);
 }
 
 .chain-loading,
@@ -635,7 +635,7 @@ button {
 
 .step-num {
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--font-label);
   letter-spacing: 2px;
 }
 
@@ -659,7 +659,7 @@ button {
   padding: 10px;
   border: 2px dashed var(--border);
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-control);
   line-height: 1.7;
 }
 
@@ -685,13 +685,13 @@ button {
 
 .mut-weight {
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--font-control);
   letter-spacing: 1px;
 }
 
 .chance-table {
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--font-control);
 }
 
 .chance-table caption {
@@ -709,7 +709,7 @@ button {
 
 .chance-table th {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-meta);
   letter-spacing: 2px;
 }
 
@@ -758,14 +758,14 @@ button {
   border: 2px solid var(--accent);
   background: var(--accent-bg);
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--font-meta);
 }
 
 .chip-x {
   padding: 0 2px;
   border: none;
   background: none;
-  font-size: 12px;
+  font-size: var(--font-control);
   line-height: 1;
 }
 
@@ -785,7 +785,7 @@ button {
   border: 2px solid var(--border);
   background: var(--surface);
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-meta);
 }
 
 .option-btn:hover,
@@ -809,7 +809,7 @@ button {
 .odds-caveat {
   margin: 0;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-control);
   line-height: 1.7;
 }
 
@@ -870,14 +870,14 @@ button {
 }
 
 .palette-keys {
-  font-size: 11px;
+  font-size: var(--font-label);
   letter-spacing: 1px;
   color: var(--text-dim);
 }
 
 .palette-input {
   padding: 9px 10px;
-  font-size: 14px;
+  font-size: var(--font-body);
 }
 
 .chip-row {
@@ -941,7 +941,7 @@ button {
   margin: 0;
   padding: 8px 2px;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-control);
   letter-spacing: 1px;
 }
 
@@ -1034,7 +1034,7 @@ button {
   background: var(--surface);
   color: var(--text-dim);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-control);
   letter-spacing: 2px;
   cursor: pointer;
 }
@@ -1067,13 +1067,13 @@ button {
   padding: 0;
   list-style: none;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-control);
   line-height: 1.9;
 }
 
 .path-hints code {
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--font-control);
   word-break: break-all;
 }
 
@@ -1083,7 +1083,7 @@ button {
 
 .import-message {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-body);
   line-height: 1.6;
 }
 
@@ -1095,7 +1095,7 @@ button {
   margin: 0;
   padding: 0 0 0 16px;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-control);
   line-height: 1.7;
 }
 
@@ -1117,7 +1117,7 @@ button {
   padding: 7px 10px;
   border: 2px solid var(--border);
   background: var(--surface-alt);
-  font-size: 12px;
+  font-size: var(--font-control);
   text-align: left;
 }
 
@@ -1158,14 +1158,14 @@ button {
 .owned-count {
   flex: none;
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--font-control);
 }
 
 /* Detail beside the count, not a second headline number — hence dim rather than accent. */
 .owned-split {
   flex: none;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--font-control);
   white-space: nowrap;
 }
 
@@ -1179,7 +1179,7 @@ button {
   padding: 0 3px;
   border: 2px solid var(--accent);
   color: var(--accent);
-  font-size: 10px;
+  font-size: var(--font-label);
   letter-spacing: 1px;
   white-space: nowrap;
 }
@@ -1187,7 +1187,7 @@ button {
 .share-note {
   margin: 0;
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--font-meta);
   letter-spacing: 1px;
 }
 
@@ -1220,7 +1220,7 @@ button {
   padding: 0;
   list-style: none;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-control);
   line-height: 1.6;
 }
 
@@ -1245,7 +1245,7 @@ button {
   padding-top: 12px;
   border-top: 2px solid var(--border);
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-control);
   line-height: 1.7;
 }
 
@@ -1298,7 +1298,7 @@ button {
   max-width: 520px;
   margin: 0;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--font-body);
   line-height: 1.6;
 }
 
@@ -1307,7 +1307,7 @@ button {
   border: 2px solid var(--accent);
   background: var(--accent-bg);
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--font-control);
   letter-spacing: 3px;
 }
 
@@ -1351,6 +1351,12 @@ button {
 
   .palette-keys {
     display: none;
+  }
+
+  .palette-input,
+  .filter-input,
+  .depth-select {
+    font-size: 16px;
   }
 
   .import-panel {
