@@ -17,8 +17,7 @@ const BADGE_TEXT: Record<ComboBadge, string> = {
 export interface ComboTableProps {
   rows: ComboRow[]
   /**
-   * Rows past this many are replaced by a count note. Left off, everything renders — fine up to
-   * a few hundred rows, which is what the combo tabs produce for most pals.
+   * Initial row count and "show more" step. Left off, everything renders.
    */
   cap?: number
 }
@@ -53,9 +52,10 @@ export function ComboTable({ rows, cap }: ComboTableProps) {
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<string[]>([])
   const [ownedPref, setOwnedPref] = useState(false)
+  const [shownLimit, setShownLimit] = useState(cap ?? Number.POSITIVE_INFINITY)
 
-  // Read once per table rather than per tile: a capped table is 300 rows x 3 tiles, and each of
-  // those subscribing to the store for one boolean is 900 subscriptions to answer 900 set lookups.
+  // Read once per table rather than per tile: even one 50-row batch can carry 150 tiles, and each
+  // subscribing to the store for one boolean would be 150 subscriptions for 150 set lookups.
   const owned = useMemo(() => new Set(ownedSpeciesIndices(bySpecies)), [bySpecies])
   const hasOwned = hasOwnedFor(bySpecies, ds.pals.length)
   // Clearing the list mid-session takes the chip away with it; without this the table would keep
@@ -74,8 +74,9 @@ export function ComboTable({ rows, cap }: ComboTableProps) {
     )
   }, [ds, owned, ownedOnly, query, rows, showChild, typeFilter])
 
-  const shown = cap === undefined ? filtered : filtered.slice(0, cap)
+  const shown = filtered.slice(0, shownLimit)
   const hidden = filtered.length - shown.length
+  const nextCount = cap === undefined ? 0 : Math.min(cap, hidden)
 
   const toggleType = (type: string): void => {
     setTypeFilter((prev) => (prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]))
@@ -169,7 +170,18 @@ export function ComboTable({ rows, cap }: ComboTableProps) {
         </div>
       )}
 
-      {hidden > 0 && <p className="panel-note">…{hidden} more pairs not shown — narrow with the filter</p>}
+      {hidden > 0 && cap !== undefined && (
+        <div className="combo-tail">
+          <p className="panel-note">…{hidden} more pairs not shown</p>
+          <button
+            type="button"
+            className="file-btn"
+            onClick={() => setShownLimit((current) => current + cap)}
+          >
+            SHOW {nextCount} MORE
+          </button>
+        </div>
+      )}
     </div>
   )
 }

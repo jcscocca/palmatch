@@ -488,9 +488,14 @@ button {
 }
 
 .filter-input {
-  flex: 1 1 220px;
   padding: 7px 10px;
   font-size: var(--font-body);
+}
+
+/* The combo filter grows across its row. Passive Odds uses the same input chrome inside a
+   column, where this flex basis would otherwise turn each search field into a 220px-tall box. */
+.filter-bar > .filter-input {
+  flex: 1 1 220px;
 }
 
 .table-scroll {
@@ -538,6 +543,17 @@ button {
 
 .cell-badges .badge-pill + .badge-pill {
   margin-left: 4px;
+}
+
+.combo-tail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.combo-tail .panel-note {
+  flex: 1 1 auto;
 }
 
 /* ---- child card ---- */
@@ -866,6 +882,12 @@ button {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  gap: 10px;
+}
+
+.palette-head-actions {
+  display: flex;
+  align-items: center;
   gap: 10px;
 }
 

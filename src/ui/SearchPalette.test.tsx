@@ -164,6 +164,14 @@ describe('SearchPalette', () => {
     expect(useWorkbenchStore.getState().slotA).toBe(null)
   })
 
+  it('has an explicit close button', () => {
+    const onClose = vi.fn()
+    open('a', onClose)
+    fireEvent.click(screen.getByRole('button', { name: 'close search pals' }))
+    expect(onClose).toHaveBeenCalled()
+    expect(useWorkbenchStore.getState().slotA).toBe(null)
+  })
+
   it('type chips filter results and toggle off again', () => {
     const input = open('a')
     type(input, 'lam')

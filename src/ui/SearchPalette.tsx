@@ -174,7 +174,12 @@ export function SearchPalette({ forSlot, onClose }: SearchPaletteProps) {
             SEARCH
             {slotName}
           </span>
-          <span className="palette-keys">↑↓ move · ENTER pick · 1/2/3 A/B/⌖ · ESC close</span>
+          <div className="palette-head-actions">
+            <span className="palette-keys">↑↓ move · ENTER pick · 1/2/3 A/B/⌖ · ESC close</span>
+            <button type="button" className="toast-close" aria-label="close search pals" onClick={onClose}>
+              ×
+            </button>
+          </div>
         </div>
 
         <input
