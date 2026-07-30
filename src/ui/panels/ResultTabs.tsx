@@ -13,8 +13,8 @@ import { comboRowsFor, parentRowsFor } from './combo-rows.ts'
 
 /** Fixed: every tab's `aria-controls` points at the one panel element, which never changes id. */
 const PANEL_ID = 'result-panel'
-/** A handful of pals have >1000 parent pairs; the filter is how you get at the rest. */
-const COMBO_CAP = 300
+/** Keep the first view scannable; the table can reveal further batches without losing its filters. */
+const COMBO_CAP = 50
 /** One string each, rather than a sentence assembled from JSX: the hint is read as a whole. */
 const EMPTY_HINT = 'pick pals to begin — fill PARENT A, PARENT B, or TARGET above, or press / to search'
 const OWNED_HINT = `${EMPTY_HINT} — or set a TARGET alone and chain from the pals you own`

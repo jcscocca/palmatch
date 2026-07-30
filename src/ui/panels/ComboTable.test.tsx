@@ -132,12 +132,16 @@ describe('ComboTable', () => {
     expect(useWorkbenchStore.getState().slotB).toBe(idx('Foxparks Cryst'))
   })
 
-  it('caps rendered rows with an explicit count of what is hidden', () => {
+  it('reveals capped rows in batches with an explicit count of what remains', () => {
     const rows = comboRowsFor(ds, idx('Lamball'))
     show(rows, 10)
 
     expect(bodyRows()).toHaveLength(10)
-    expect(screen.getByText(`…${rows.length - 10} more pairs not shown — narrow with the filter`)).toBeTruthy()
+    expect(screen.getByText(`…${rows.length - 10} more pairs not shown`)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'SHOW 10 MORE' }))
+    expect(bodyRows()).toHaveLength(20)
+    expect(screen.getByText(`…${rows.length - 20} more pairs not shown`)).toBeTruthy()
   })
 
   it('offers no OWNED ONLY chip to a player who has imported nothing', () => {
@@ -177,7 +181,7 @@ describe('ComboTable', () => {
 
     fireEvent.click(screen.getByText('OWNED ONLY'))
     expect(bodyRows()).toHaveLength(1)
-    expect(screen.getByText(`…${both.length - 1} more pairs not shown — narrow with the filter`)).toBeTruthy()
+    expect(screen.getByText(`…${both.length - 1} more pairs not shown`)).toBeTruthy()
   })
 
   it('ticks exactly the cells the player owns, child included', () => {

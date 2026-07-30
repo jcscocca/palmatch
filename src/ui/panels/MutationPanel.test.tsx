@@ -82,7 +82,8 @@ describe('ViaMutation', () => {
 
     const rows = screen.getAllByRole('row').slice(1)
     expect(rows).toHaveLength(100)
-    expect(screen.getByText(`…${pairs.length - 100} more pairs not shown — narrow with the filter`)).toBeTruthy()
+    expect(screen.getByText(`…${pairs.length - 100} more pairs not shown`)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'SHOW 100 MORE' })).toBeTruthy()
     expect(screen.getByText('COMMUNITY MODEL')).toBeTruthy()
   })
 })
