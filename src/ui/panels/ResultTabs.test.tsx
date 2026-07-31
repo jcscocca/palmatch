@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { findParents } from '../../engine/breed.ts'
 import { loadDatasetFromDisk } from '../../engine/dataset.ts'
@@ -125,10 +125,30 @@ describe('ResultTabs', () => {
     expect((screen.getByLabelText('filter combos by pal name') as HTMLInputElement).value).toBe('')
   })
 
-  it('prompts for pals when nothing is picked', () => {
+  it('shows special combinations when nothing is picked', () => {
     show()
     expect(screen.queryAllByRole('tab')).toHaveLength(0)
-    expect(screen.getByText(/pick pals to begin/)).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'SPECIAL COMBINATIONS' })).toBeTruthy()
+    expect(screen.getByText('TOP 10')).toBeTruthy()
+    expect(screen.getByRole('table')).toBeTruthy()
+    expect(screen.queryByLabelText('filter combos by pal name')).toBeNull()
+    expect(screen.getByText('Frostallion Noct')).toBeTruthy()
+    expect((screen.getByLabelText('sort special combinations') as HTMLSelectElement).value).toBe('breeding-rank')
+
+    fireEvent.click(screen.getByLabelText('set as Parent A (Helzephyr)'))
+    expect(useWorkbenchStore.getState().slotA).toBe(idx('Helzephyr'))
+    expect(screen.getByRole('tab', { name: 'ALL A-COMBOS' })).toBeTruthy()
+  })
+
+  it('sorts special combinations by biggest rank jump', () => {
+    show()
+    const bodyRows = () => within(screen.getByRole('table')).getAllByRole('row').slice(1)
+    expect(bodyRows()[0].textContent).toContain('Frostallion Noct')
+
+    fireEvent.change(screen.getByLabelText('sort special combinations'), { target: { value: 'rank-jump' } })
+
+    expect(screen.getByText('Largest rank improvement over the stronger parent first.')).toBeTruthy()
+    expect(bodyRows()[0].textContent).toContain('Loupmoon Cryst')
   })
 
   it('adds a CHAINS tab to target mode only for a player who owns pals', () => {
@@ -172,14 +192,14 @@ describe('ResultTabs', () => {
     expect(screen.getByRole('tab', { name: /PARENT COMBOS/ }).getAttribute('aria-selected')).toBe('true')
   })
 
-  it('points an empty workbench at the owned list, and only then', () => {
+  it('keeps the special-combos front page when the player owns pals', () => {
     show()
-    expect(screen.queryByText(/pals you own/)).toBeNull()
+    expect(screen.getByRole('heading', { name: 'SPECIAL COMBINATIONS' })).toBeTruthy()
 
     cleanup()
     own('Lamball')
     show()
-    expect(screen.getByText(/pick pals to begin.*chain from the pals you own/)).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'SPECIAL COMBINATIONS' })).toBeTruthy()
   })
 
   it('drops a tab id that does not belong to the current mode', () => {

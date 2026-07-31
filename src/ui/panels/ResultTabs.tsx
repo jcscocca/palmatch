@@ -9,16 +9,13 @@ import { ChildCard } from './ChildCard.tsx'
 import { ComboTable } from './ComboTable.tsx'
 import { MutationPanel, ViaMutation } from './MutationPanel.tsx'
 import { OddsPanel } from './OddsPanel.tsx'
+import { SpecialCombos } from './SpecialCombos.tsx'
 import { comboRowsFor, parentRowsFor } from './combo-rows.ts'
 
 /** Fixed: every tab's `aria-controls` points at the one panel element, which never changes id. */
 const PANEL_ID = 'result-panel'
 /** Keep the first view scannable; the table can reveal further batches without losing its filters. */
 const COMBO_CAP = 50
-/** One string each, rather than a sentence assembled from JSX: the hint is read as a whole. */
-const EMPTY_HINT = 'pick pals to begin — fill PARENT A, PARENT B, or TARGET above, or press / to search'
-const OWNED_HINT = `${EMPTY_HINT} — or set a TARGET alone and chain from the pals you own`
-
 /**
  * The result area: the per-mode tab strip plus whichever panel it selects. Arrow keys move between
  * tabs (roving tabindex — only the selected tab is in the tab order), and selection follows focus,
@@ -84,7 +81,7 @@ export function ResultTabs() {
   const body = ((): ReactNode => {
     switch (activeTab) {
       case null:
-        return <p className="panel-note">{hasOwned ? OWNED_HINT : EMPTY_HINT}</p>
+        return <SpecialCombos />
       case 'child':
         return pair === null ? null : <ChildCard a={pair.a} b={pair.b} />
       case 'mutations':

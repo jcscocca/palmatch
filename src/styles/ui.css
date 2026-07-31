@@ -415,6 +415,52 @@ button {
   line-height: 1.6;
 }
 
+.special-combos-head {
+  margin-bottom: 14px;
+}
+
+.special-combos-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 5px;
+}
+
+.special-combos-head h2 {
+  margin: 0;
+  color: var(--accent);
+  font-size: var(--font-control);
+  letter-spacing: 3px;
+}
+
+.special-combos-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.special-combos-head p {
+  flex: 1 1 280px;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--font-body);
+  line-height: 1.5;
+}
+
+.special-combos-title > .label-caps {
+  flex: none;
+}
+
+.combo-sort {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .count-line {
   margin: 0 0 10px;
   color: var(--text-dim);
@@ -452,7 +498,8 @@ button {
 /* Inputs and selects share their chrome; only padding and size differ per place. */
 .palette-input,
 .filter-input,
-.depth-select {
+.depth-select,
+.combo-sort-select {
   border: 2px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -461,7 +508,8 @@ button {
 
 .palette-input:focus,
 .filter-input:focus,
-.depth-select:focus {
+.depth-select:focus,
+.combo-sort-select:focus {
   border-color: var(--accent);
   outline: none;
 }
@@ -609,6 +657,11 @@ button {
 }
 
 .depth-select {
+  padding: 5px 8px;
+  font-size: var(--font-control);
+}
+
+.combo-sort-select {
   padding: 5px 8px;
   font-size: var(--font-control);
 }
@@ -1377,7 +1430,8 @@ button {
 
   .palette-input,
   .filter-input,
-  .depth-select {
+  .depth-select,
+  .combo-sort-select {
     font-size: 16px;
   }
 
@@ -1395,6 +1449,51 @@ button {
 
   .cell-pal {
     min-width: 130px;
+  }
+
+  /* The general combo tables scroll horizontally on mobile. The blank-workbench list is a landing
+     surface, so its child should not be hidden offscreen: turn only these rows into recipe cards. */
+  .special-combos .table-scroll {
+    overflow: visible;
+  }
+
+  .special-combos .combo-table,
+  .special-combos .combo-table tbody {
+    display: block;
+  }
+
+  .special-combos .combo-table thead {
+    display: none;
+  }
+
+  .special-combos .combo-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .special-combos .combo-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    border: 2px solid var(--border);
+    background: var(--surface-alt);
+  }
+
+  .special-combos .combo-table td {
+    display: block;
+    min-width: 0;
+    padding: 8px;
+    border: none;
+  }
+
+  .special-combos .combo-table td:nth-child(3) {
+    grid-column: 1 / -1;
+    border-top: 2px dashed var(--border);
+    background: var(--accent-bg);
+  }
+
+  .special-combos .combo-table .cell-badges {
+    display: none;
   }
 
   .odds-big {

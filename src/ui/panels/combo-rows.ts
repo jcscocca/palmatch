@@ -16,6 +16,45 @@ export interface ComboRow {
   lockHint?: string
 }
 
+export type SpecialComboSort = 'breeding-rank' | 'rank-jump'
+
+/**
+ * Front-page recipes: cross-species special combos under the selected order. Breeding rank runs in
+ * reverse (a lower `power` value is stronger); rank jump therefore measures how far below the
+ * stronger parent's rank the child lands. The list is sorted before duplicate children are
+ * removed, so the selected order also chooses which recipe represents a child.
+ */
+export function specialRowsFor(ds: Dataset, sort: SpecialComboSort, limit: number): ComboRow[] {
+  if (limit <= 0) return []
+
+  const jump = (a: number, b: number, child: number): number =>
+    Math.min(ds.pals[a].power, ds.pals[b].power) - ds.pals[child].power
+
+  const candidates = [...ds.combos.unique]
+    .filter(({ a, b, child }) => a !== b && child !== a && child !== b)
+    .sort((x, y) => {
+      const byRank = ds.pals[x.child].power - ds.pals[y.child].power
+      const byJump = jump(y.a, y.b, y.child) - jump(x.a, x.b, x.child)
+      const primary = sort === 'breeding-rank' ? byRank || byJump : byJump || byRank
+      return primary || y.child - x.child || x.a - y.a || x.b - y.b
+    })
+
+  const children = new Set<number>()
+  const rows: ComboRow[] = []
+  for (const combo of candidates) {
+    if (children.has(combo.child)) continue
+    children.add(combo.child)
+    rows.push({
+      a: Math.min(combo.a, combo.b),
+      b: Math.max(combo.a, combo.b),
+      child: combo.child,
+      badges: ['unique'],
+    })
+    if (rows.length === limit) break
+  }
+  return rows
+}
+
 export function rowKey(row: ComboRow): string {
   return `${row.a}-${row.b}-${row.child ?? ''}`
 }

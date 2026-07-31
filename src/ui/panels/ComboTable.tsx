@@ -20,6 +20,8 @@ export interface ComboTableProps {
    * Initial row count and "show more" step. Left off, everything renders.
    */
   cap?: number
+  /** Hide the search/filter chrome for short, curated lists such as the front-page picks. */
+  showFilters?: boolean
 }
 
 /** One pal against both filters; the row survives when any *visible* cell of it does. */
@@ -45,7 +47,7 @@ function rowMatches(ds: Dataset, row: ComboRow, showChild: boolean, query: strin
  * everything inside it into one accessible name and hide `PalTile`'s promote buttons from screen
  * readers. Promotion is the only interaction here, so the row itself doesn't need to be one.
  */
-export function ComboTable({ rows, cap }: ComboTableProps) {
+export function ComboTable({ rows, cap, showFilters = true }: ComboTableProps) {
   const ds = useDataset()
   const setSlot = useWorkbenchStore((s) => s.setSlot)
   const bySpecies = useOwnedStore((s) => s.bySpecies)
@@ -88,32 +90,36 @@ export function ComboTable({ rows, cap }: ComboTableProps) {
 
   return (
     <div className="combo-panel">
-      <div className="filter-bar">
-        <input
-          className="filter-input"
-          type="text"
-          aria-label="filter combos by pal name"
-          placeholder="filter by name…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <TypeChips selected={typeFilter} onToggle={toggleType} />
-        {hasOwned && (
-          <button
-            type="button"
-            className={`chip-text${ownedOnly ? ' chip-on' : ''}`}
-            aria-pressed={ownedOnly}
-            title="only pairs where you own both parents"
-            onClick={() => setOwnedPref((on) => !on)}
-          >
-            OWNED ONLY
-          </button>
-        )}
-      </div>
+      {showFilters && (
+        <>
+          <div className="filter-bar">
+            <input
+              className="filter-input"
+              type="text"
+              aria-label="filter combos by pal name"
+              placeholder="filter by name…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <TypeChips selected={typeFilter} onToggle={toggleType} />
+            {hasOwned && (
+              <button
+                type="button"
+                className={`chip-text${ownedOnly ? ' chip-on' : ''}`}
+                aria-pressed={ownedOnly}
+                title="only pairs where you own both parents"
+                onClick={() => setOwnedPref((on) => !on)}
+              >
+                OWNED ONLY
+              </button>
+            )}
+          </div>
 
-      <p className="count-line">
-        {filtered.length} combos{filtered.length === rows.length ? '' : ` of ${rows.length}`}
-      </p>
+          <p className="count-line">
+            {filtered.length} combos{filtered.length === rows.length ? '' : ` of ${rows.length}`}
+          </p>
+        </>
+      )}
 
       {shown.length === 0 ? (
         <p className="panel-note">no combos match this filter</p>
