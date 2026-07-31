@@ -5,6 +5,8 @@ pair that makes it, plan multi-step breeding chains toward a pal you don't have 
 check mutation odds for a pairing, and estimate the odds a child inherits the passive skills you
 want.
 
+[Open the deployed app](https://jcscocca.github.io/palmatch/)
+
 <!-- screenshot: docs/screenshot.png — workbench in pair mode, child card + mutation panel visible -->
 
 Everything runs client-side against data pipelined from [palcalc](https://github.com/tylercamp/palcalc)
