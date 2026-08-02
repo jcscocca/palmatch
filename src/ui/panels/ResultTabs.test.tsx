@@ -63,7 +63,7 @@ describe('ResultTabs', () => {
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
       'CHILD',
       'MUTATIONS',
-      'PASSIVE ODDS',
+      'PASSIVE PLAN',
       'ALL A-COMBOS',
     ])
     expect(screen.getByRole('tabpanel').id).toBe('result-panel')
@@ -129,13 +129,15 @@ describe('ResultTabs', () => {
     show()
     expect(screen.queryAllByRole('tab')).toHaveLength(0)
     expect(screen.getByRole('heading', { name: 'SPECIAL COMBINATIONS' })).toBeTruthy()
-    expect(screen.getByText('TOP 10')).toBeTruthy()
+    expect(screen.getByText('88 RECIPES')).toBeTruthy()
     expect(screen.getByRole('table')).toBeTruthy()
+    const recipeRows = within(screen.getByRole('table')).getAllByRole('row').slice(1)
+    expect(recipeRows.length).toBeGreaterThan(10)
     expect(screen.queryByLabelText('filter combos by pal name')).toBeNull()
     expect(screen.getByText('Frostallion Noct')).toBeTruthy()
     expect((screen.getByLabelText('sort special combinations') as HTMLSelectElement).value).toBe('breeding-rank')
 
-    fireEvent.click(screen.getByLabelText('set as Parent A (Helzephyr)'))
+    fireEvent.click(within(recipeRows[0]).getByLabelText('set as Parent A (Helzephyr)'))
     expect(useWorkbenchStore.getState().slotA).toBe(idx('Helzephyr'))
     expect(screen.getByRole('tab', { name: 'ALL A-COMBOS' })).toBeTruthy()
   })

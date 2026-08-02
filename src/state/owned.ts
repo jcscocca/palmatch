@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { StoreApi, UseBoundStore } from 'zustand'
-import type { GenderCode, PalRecord } from '../engine/types.ts'
+import type { GenderCode, PalRecord, PassiveRecord } from '../engine/types.ts'
 import type { ImportResult, Talents } from '../save/types.ts'
 
 /**
@@ -85,7 +85,7 @@ export interface OwnedData {
 }
 
 export interface OwnedActions {
-  setOwned(result: ImportResult, label: string): void
+  setOwned(result: ImportResult, label: string, passives?: readonly PassiveRecord[]): void
   clearOwned(): void
   loadShared(species: SharedSpecies[], label?: string): void
 }
@@ -185,15 +185,128 @@ interface SpeciesTally {
   individuals: OwnedIndividual[]
 }
 
+interface PortfolioCandidate {
+  index: number
+  individual: OwnedIndividual
+  elite: string[]
+  eliteScore: number
+  positiveScore: number
+  maxRank: number
+  negativeCount: number
+  ivScore: number
+}
+
+function ivScore(individual: OwnedIndividual): number {
+  const t = individual.talents
+  return t === null ? -1 : t.hp + t.shot + t.defense
+}
+
+function candidateOf(
+  individual: OwnedIndividual,
+  index: number,
+  rankById: ReadonlyMap<string, number>,
+): PortfolioCandidate {
+  const ranks = individual.passives.map((id) => rankById.get(id) ?? 0)
+  return {
+    index,
+    individual,
+    elite: individual.passives.filter((id) => (rankById.get(id) ?? 0) >= 4),
+    eliteScore: ranks.filter((rank) => rank >= 4).reduce((sum, rank) => sum + rank, 0),
+    positiveScore: ranks.filter((rank) => rank > 0).reduce((sum, rank) => sum + rank, 0),
+    maxRank: Math.max(0, ...ranks),
+    negativeCount: ranks.filter((rank) => rank < 0).length,
+    ivScore: ivScore(individual),
+  }
+}
+
+/** Best ready-made donor first, with cleanliness and IVs breaking genuine quality ties. */
+function compareQuality(a: PortfolioCandidate, b: PortfolioCandidate): number {
+  return (
+    b.eliteScore - a.eliteScore ||
+    b.maxRank - a.maxRank ||
+    b.positiveScore - a.positiveScore ||
+    a.negativeCount - b.negativeCount ||
+    a.individual.passives.length - b.individual.passives.length ||
+    b.ivScore - a.ivScore ||
+    a.index - b.index
+  )
+}
+
+/** Cleanest carrier for a gender, then the strongest useful trait and IVs among equal-sized pools. */
+function compareClean(a: PortfolioCandidate, b: PortfolioCandidate): number {
+  return (
+    a.individual.passives.length - b.individual.passives.length ||
+    a.negativeCount - b.negativeCount ||
+    compareQuality(a, b)
+  )
+}
+
 /**
- * Folds the parser's flat pal list into the stored shape. Sorting by passive count before the
- * cap is what makes the kept examples the useful ones; `Array.sort` is stable, so pals with equal
- * passive counts stay in save order.
+ * A bounded breeding portfolio rather than the old "most passives" sample. It reserves clean
+ * male/female stock, greedily covers distinct elite passives, then fills remaining slots with the
+ * best ready-made donors. The cap still bounds localStorage; `OwnedSpecies.count` lets the UI say
+ * when these are representative copies rather than the full species inventory.
+ */
+export function selectBreedingPortfolio(
+  individuals: OwnedIndividual[],
+  passives: readonly PassiveRecord[] = [],
+  limit = MAX_STORED_INDIVIDUALS,
+): OwnedIndividual[] {
+  if (limit <= 0) return []
+  if (individuals.length <= limit) return [...individuals]
+
+  const rankById = new Map(passives.map((p) => [p.id, p.rank]))
+  const candidates = individuals.map((individual, index) => candidateOf(individual, index, rankById))
+  const picked: PortfolioCandidate[] = []
+  const pickedIndices = new Set<number>()
+  const coveredElite = new Set<string>()
+
+  const take = (candidate: PortfolioCandidate): void => {
+    if (picked.length >= limit || pickedIndices.has(candidate.index)) return
+    picked.push(candidate)
+    pickedIndices.add(candidate.index)
+    for (const id of candidate.elite) coveredElite.add(id)
+  }
+
+  // A zero/one-passive pal of each known gender is precious cleanup stock. Do not reserve a dirty
+  // specimen merely for gender; the exact tallies still live outside this representative sample.
+  for (const gender of ['F', 'M'] as const) {
+    const clean = candidates
+      .filter((c) => c.individual.gender === gender && c.individual.passives.length <= 1)
+      .sort(compareClean)[0]
+    if (clean !== undefined) take(clean)
+  }
+
+  // Cover different Rainbow/rank-4+ traits before taking a second carrier for one already kept.
+  while (picked.length < limit) {
+    const withNewElite = candidates
+      .filter((c) => !pickedIndices.has(c.index) && c.elite.some((id) => !coveredElite.has(id)))
+      .sort((a, b) => {
+        const uncovered = (c: PortfolioCandidate): number =>
+          c.elite.filter((id) => !coveredElite.has(id)).reduce((sum, id) => sum + (rankById.get(id) ?? 4), 0)
+        return (
+          uncovered(b) - uncovered(a) ||
+          a.individual.passives.length - b.individual.passives.length ||
+          compareQuality(a, b)
+        )
+      })[0]
+    if (withNewElite === undefined) break
+    take(withNewElite)
+  }
+
+  for (const candidate of candidates.filter((c) => !pickedIndices.has(c.index)).sort(compareQuality)) take(candidate)
+  return picked.map((candidate) => candidate.individual)
+}
+
+/**
+ * Folds the parser's flat pal list into the stored shape. The bounded individual detail is selected
+ * as a breeding portfolio — clean stock, distinct elite traits, then ready-made quality — rather
+ * than treating a larger passive pool as automatically better.
  *
  * The genders are tallied in the first loop, over every pal — the cap in the second loop can then
  * throw away individuals without ever touching a number the UI prints.
  */
-function foldOwned(result: ImportResult): OwnedBySpecies {
+function foldOwned(result: ImportResult, passives: readonly PassiveRecord[]): OwnedBySpecies {
   const tallies: Record<number, SpeciesTally> = {}
   for (const pal of result.owned) {
     const tally = (tallies[pal.speciesIndex] ??= { count: 0, males: 0, females: 0, individuals: [] })
@@ -205,12 +318,10 @@ function foldOwned(result: ImportResult): OwnedBySpecies {
 
   const bySpecies: OwnedBySpecies = {}
   for (const [key, tally] of Object.entries(tallies)) {
-    tally.individuals.sort((a, b) => b.passives.length - a.passives.length)
-    if (tally.individuals.length > MAX_STORED_INDIVIDUALS) tally.individuals.length = MAX_STORED_INDIVIDUALS
     bySpecies[Number(key)] = {
       count: tally.count,
       genders: { males: tally.males, females: tally.females },
-      individuals: tally.individuals,
+      individuals: selectBreedingPortfolio(tally.individuals, passives),
     }
   }
   return bySpecies
@@ -408,9 +519,9 @@ function persist(data: OwnedData): void {
 export function createOwnedStore(): UseBoundStore<StoreApi<OwnedState>> {
   const store = create<OwnedState>((set) => ({
     ...hydrate(),
-    setOwned: (result, label) =>
+    setOwned: (result, label, passives = []) =>
       set({
-        bySpecies: foldOwned(result),
+        bySpecies: foldOwned(result, passives),
         importedAt: new Date().toISOString(),
         sourceLabel: label,
         warnings: result.warnings,

@@ -82,6 +82,20 @@ The summary line says what was read — `from Level.sav · 2 storage files` when
 storage file that won't parse is reported as a warning and the rest of the import still lands; only
 a broken `Level.sav` fails the import outright.
 
+For each species, the importer keeps a representative breeding portfolio of up to five individual
+Pals. It favors clean one-passive males and females, preserves distinct Rainbow-ranked passives,
+then fills the remaining slots with the strongest positive-passive and IV candidates. Re-import an
+existing save to rebuild its saved portfolio with this selection logic.
+
+## PASSIVE PLAN
+
+Choose two parent species, then open PASSIVE PLAN to select an owned copy or enter each parent's
+passives and sex manually. Pick a combat, work, or mount role for community-curated beginner
+suggestions; the rank badges still expose the underlying game-data rank so you can make your own
+choice. The planner recommends direct, cleanup, and merge steps, with exact-set odds plus average
+and 90th-percentile egg estimates. These are probability estimates—not guarantees—and the plan
+optimizes passive inheritance before you choose a final target-species route.
+
 **Share links & `.palmatch.json`**
 
 SHARE copies a `#/own/<blob>` link — deflate + base64url of species indices, counts, and each

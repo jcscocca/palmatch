@@ -21,11 +21,11 @@ export type SpecialComboSort = 'breeding-rank' | 'rank-jump'
 /**
  * Front-page recipes: cross-species special combos under the selected order. Breeding rank runs in
  * reverse (a lower `power` value is stronger); rank jump therefore measures how far below the
- * stronger parent's rank the child lands. The list is sorted before duplicate children are
- * removed, so the selected order also chooses which recipe represents a child.
+ * stronger parent's rank the child lands. Every qualifying recipe remains visible: some children
+ * have several special routes, and hiding those would conceal a pairing the player may own.
  */
-export function specialRowsFor(ds: Dataset, sort: SpecialComboSort, limit: number): ComboRow[] {
-  if (limit <= 0) return []
+export function specialRowsFor(ds: Dataset, sort: SpecialComboSort, limit?: number): ComboRow[] {
+  if (limit !== undefined && limit <= 0) return []
 
   const jump = (a: number, b: number, child: number): number =>
     Math.min(ds.pals[a].power, ds.pals[b].power) - ds.pals[child].power
@@ -39,20 +39,13 @@ export function specialRowsFor(ds: Dataset, sort: SpecialComboSort, limit: numbe
       return primary || y.child - x.child || x.a - y.a || x.b - y.b
     })
 
-  const children = new Set<number>()
-  const rows: ComboRow[] = []
-  for (const combo of candidates) {
-    if (children.has(combo.child)) continue
-    children.add(combo.child)
-    rows.push({
-      a: Math.min(combo.a, combo.b),
-      b: Math.max(combo.a, combo.b),
-      child: combo.child,
-      badges: ['unique'],
-    })
-    if (rows.length === limit) break
-  }
-  return rows
+  const visible = limit === undefined ? candidates : candidates.slice(0, limit)
+  return visible.map((combo) => ({
+    a: Math.min(combo.a, combo.b),
+    b: Math.max(combo.a, combo.b),
+    child: combo.child,
+    badges: ['unique'],
+  }))
 }
 
 export function rowKey(row: ComboRow): string {

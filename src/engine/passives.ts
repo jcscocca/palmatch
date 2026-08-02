@@ -22,3 +22,30 @@ export function passiveOdds(poolSize: number, desiredCount: number): number {
   }
   return p
 }
+
+/**
+ * P(the child directly inherits exactly the desired set and no other passive from the parents).
+ * This is the clean-combo counterpart to `passiveOdds`, which allows additional inherited
+ * passives. Random-fill passives are outside both estimates and are called out by the UI.
+ */
+export function exactPassiveOdds(poolSize: number, desiredCount: number): number {
+  if (desiredCount <= 0 || desiredCount > Math.min(poolSize, 4)) return 0
+  return K_WEIGHTS[desiredCount - 1] / choose(poolSize, desiredCount)
+}
+
+export interface AttemptEstimate {
+  /** Mean of the geometric distribution, rounded up to whole eggs. */
+  average: number
+  /** Eggs by which at least one success has a 90% chance of having appeared. */
+  p90: number
+}
+
+/** Egg-count context for a per-egg success chance, or null when the roll cannot succeed. */
+export function attemptEstimate(chance: number): AttemptEstimate | null {
+  if (chance <= 0) return null
+  if (chance >= 1) return { average: 1, p90: 1 }
+  return {
+    average: Math.ceil(1 / chance),
+    p90: Math.ceil(Math.log(0.1) / Math.log(1 - chance)),
+  }
+}

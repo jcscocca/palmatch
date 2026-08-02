@@ -60,6 +60,7 @@ describe('createWorkbenchStore', () => {
     expect(s.tab).toBeNull()
     expect(s.chainDepth).toBe(DEFAULT_CHAIN_DEPTH)
     expect(s.parentPassives).toEqual({ a: [], b: [] })
+    expect(s.parentGenders).toEqual({ a: null, b: null })
     expect(s.desiredPassives).toEqual([])
   })
 
@@ -143,6 +144,37 @@ describe('createWorkbenchStore', () => {
     expect(store.getState().parentPassives.a).toHaveLength(MAX_PARENT_PASSIVES)
     expect(store.getState().parentPassives.a).toEqual(['p1', 'p2', 'p3', 'p4'])
     expect(store.getState().parentPassives.b).toEqual([])
+    store.getState().setDesiredPassives(['p1', 'p2', 'p3', 'p4', 'p5'])
+    expect(store.getState().desiredPassives).toEqual(['p1', 'p2', 'p3', 'p4'])
+  })
+
+  it('clears copy-specific traits when a parent species changes', () => {
+    const store = createWorkbenchStore()
+    store.getState().setSlot('a', 1)
+    store.getState().setSlot('b', 2)
+    store.getState().setParentPassives('b', ['Lucky'])
+    store.getState().setParentGender('b', 'F')
+    store.getState().setDesiredPassives(['Lucky'])
+
+    store.getState().setSlot('b', 3)
+
+    expect(store.getState().parentPassives.b).toEqual([])
+    expect(store.getState().parentGenders.b).toBeNull()
+    expect(store.getState().desiredPassives).toEqual([])
+  })
+
+  it('moves exact-copy details with B when clearing A promotes it', () => {
+    const store = createWorkbenchStore()
+    store.getState().setSlot('a', 1)
+    store.getState().setSlot('b', 2)
+    store.getState().setParentPassives('b', ['Lucky'])
+    store.getState().setParentGender('b', 'M')
+
+    store.getState().setSlot('a', null)
+
+    expect(store.getState().slotA).toBe(2)
+    expect(store.getState().parentPassives).toEqual({ a: ['Lucky'], b: [] })
+    expect(store.getState().parentGenders).toEqual({ a: 'M', b: null })
   })
 
   it('resets everything on clearAll', () => {
@@ -153,6 +185,7 @@ describe('createWorkbenchStore', () => {
     s.setSlot('t', 3)
     s.setChainDepth(4)
     s.setParentPassives('a', ['p1'])
+    s.setParentGender('a', 'F')
     s.setDesiredPassives(['p1'])
 
     store.getState().clearAll()
@@ -164,6 +197,7 @@ describe('createWorkbenchStore', () => {
     expect(after.tab).toBeNull()
     expect(after.chainDepth).toBe(DEFAULT_CHAIN_DEPTH)
     expect(after.parentPassives).toEqual({ a: [], b: [] })
+    expect(after.parentGenders).toEqual({ a: null, b: null })
     expect(after.desiredPassives).toEqual([])
   })
 })

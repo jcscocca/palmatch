@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { StoreApi, UseBoundStore } from 'zustand'
+import type { GenderCode } from '../engine/types.ts'
 
 export const DEFAULT_CHAIN_DEPTH = 6
 export const MAX_PARENT_PASSIVES = 4
@@ -7,6 +8,11 @@ export const MAX_PARENT_PASSIVES = 4
 export interface ParentPassives {
   a: string[]
   b: string[]
+}
+
+export interface ParentGenders {
+  a: GenderCode | null
+  b: GenderCode | null
 }
 
 /**
@@ -52,6 +58,8 @@ export interface WorkbenchData {
   chainDepth: number
   /** Passive ids the player has declared for each parent, max 4 each. */
   parentPassives: ParentPassives
+  /** Gender of the exact owned/manual copy selected for each parent, when known. */
+  parentGenders: ParentGenders
   desiredPassives: string[]
 }
 
@@ -60,6 +68,7 @@ export interface WorkbenchActions {
   setTab(tab: TabId | null): void
   setChainDepth(d: number): void
   setParentPassives(side: 'a' | 'b', ids: string[]): void
+  setParentGender(side: 'a' | 'b', gender: GenderCode | null): void
   setDesiredPassives(ids: string[]): void
   clearAll(): void
 }
@@ -116,6 +125,7 @@ function initialState(): WorkbenchData {
     tab: null,
     chainDepth: DEFAULT_CHAIN_DEPTH,
     parentPassives: { a: [], b: [] },
+    parentGenders: { a: null, b: null },
     desiredPassives: [],
   }
 }
@@ -132,9 +142,23 @@ export function createWorkbenchStore(): UseBoundStore<StoreApi<WorkbenchState>> 
         let slotA = state.slotA
         let slotB = state.slotB
         let target = state.target
-        if (slot === 'a') slotA = v
-        else if (slot === 'b') slotB = v
-        else target = v
+        let parentPassives = state.parentPassives
+        let parentGenders = state.parentGenders
+        if (slot === 'a') {
+          if (slotA !== v) {
+            parentPassives = { ...parentPassives, a: [] }
+            parentGenders = { ...parentGenders, a: null }
+          }
+          slotA = v
+        } else if (slot === 'b') {
+          if (slotB !== v) {
+            parentPassives = { ...parentPassives, b: [] }
+            parentGenders = { ...parentGenders, b: null }
+          }
+          slotB = v
+        } else {
+          target = v
+        }
 
         // Enforce the "slotB never held while slotA is null" invariant right here, the one
         // place slots are written, rather than leaving every reader to re-derive it:
@@ -145,6 +169,8 @@ export function createWorkbenchStore(): UseBoundStore<StoreApi<WorkbenchState>> 
         if (slotA === null && slotB !== null) {
           slotA = slotB
           slotB = null
+          parentPassives = { a: parentPassives.b, b: [] }
+          parentGenders = { a: parentGenders.b, b: null }
         }
 
         const next = { slotA, slotB, target }
@@ -152,7 +178,9 @@ export function createWorkbenchStore(): UseBoundStore<StoreApi<WorkbenchState>> 
         // actually changes, but leave it alone for a same-mode edit - e.g. swapping parent B for
         // a different pal in pair mode shouldn't kick the player off the tab they're looking at.
         const tab = modeFor(state) === modeFor(next) ? state.tab : null
-        return { ...next, tab }
+        const pool = new Set([...parentPassives.a, ...parentPassives.b])
+        const desiredPassives = state.desiredPassives.filter((id) => pool.has(id))
+        return { ...next, tab, parentPassives, parentGenders, desiredPassives }
       }),
     setTab: (tab) => set({ tab }),
     setChainDepth: (d) => set({ chainDepth: d }),
@@ -160,7 +188,9 @@ export function createWorkbenchStore(): UseBoundStore<StoreApi<WorkbenchState>> 
       set((state) => ({
         parentPassives: { ...state.parentPassives, [side]: ids.slice(0, MAX_PARENT_PASSIVES) },
       })),
-    setDesiredPassives: (ids) => set({ desiredPassives: ids }),
+    setParentGender: (side, gender) =>
+      set((state) => ({ parentGenders: { ...state.parentGenders, [side]: gender } })),
+    setDesiredPassives: (ids) => set({ desiredPassives: ids.slice(0, MAX_PARENT_PASSIVES) }),
     clearAll: () => set(initialState()),
   }))
 }

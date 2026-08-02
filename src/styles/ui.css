@@ -461,6 +461,20 @@ button {
   gap: 8px;
 }
 
+.special-combos .table-scroll {
+  max-height: min(620px, 65vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.special-combos .combo-table th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: var(--surface);
+}
+
 .count-line {
   margin: 0 0 10px;
   color: var(--text-dim);
@@ -822,6 +836,7 @@ button {
 .passive-chip {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 2px 4px 2px 8px;
   border: 2px solid var(--accent);
@@ -880,6 +895,178 @@ button {
   color: var(--text-dim);
   font-size: var(--font-control);
   line-height: 1.7;
+}
+
+.copy-select-label,
+.gender-select-label,
+.role-select-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.copy-select,
+.gender-select,
+.role-select {
+  min-width: 0;
+  padding: 5px 8px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--font-control);
+}
+
+.copy-select {
+  flex: 1 1 180px;
+}
+
+.portfolio-note,
+.guidance-card p,
+.breed-plan p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--font-control);
+  line-height: 1.6;
+}
+
+.passive-tier {
+  padding: 1px 4px;
+  border: 1px solid currentColor;
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+
+.passive-tier-elite {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.passive-tier-positive {
+  color: var(--text);
+}
+
+.passive-tier-neutral {
+  color: var(--text-dim);
+}
+
+.passive-tier-negative {
+  border-color: var(--danger, #e16b6b);
+  color: var(--danger, #e16b6b);
+}
+
+.guidance-card,
+.breed-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 2px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.guidance-head,
+.breed-plan-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.guidance-head > div,
+.breed-plan-head > div:first-child {
+  display: flex;
+  flex: 1 1 360px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.suggestion-row,
+.clean-odds,
+.direct-option,
+.direct-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.suggestion-row {
+  justify-content: space-between;
+}
+
+.passive-choice {
+  text-align: left;
+}
+
+.clean-odds {
+  padding-top: 6px;
+  border-top: 2px solid var(--border);
+}
+
+.clean-odds strong {
+  color: var(--accent);
+  font-size: 20px;
+}
+
+.clean-odds span:last-child,
+.plan-estimate {
+  color: var(--text-dim);
+  font-size: var(--font-meta);
+}
+
+.breed-plan {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  box-shadow: 3px 3px 0 #000;
+}
+
+.direct-result {
+  flex: 0 1 300px;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.direct-option,
+.plan-ready,
+.plan-warning {
+  padding: 8px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+}
+
+.plan-warning {
+  border-color: var(--danger, #e16b6b);
+}
+
+.plan-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-step {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  padding: 10px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+}
+
+.plan-step p,
+.plan-estimate {
+  grid-column: 2;
+}
+
+.plan-caveat {
+  padding-top: 8px;
+  border-top: 2px dashed var(--border);
 }
 
 /* ---- search palette ---- */
@@ -1454,7 +1641,9 @@ button {
   /* The general combo tables scroll horizontally on mobile. The blank-workbench list is a landing
      surface, so its child should not be hidden offscreen: turn only these rows into recipe cards. */
   .special-combos .table-scroll {
-    overflow: visible;
+    max-height: 65vh;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .special-combos .combo-table,

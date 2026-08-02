@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { GenderCode, PalRecord } from '../engine/types.ts'
+import type { GenderCode, PalRecord, PassiveRecord } from '../engine/types.ts'
 import type { ImportResult, OwnedPal } from '../save/types.ts'
 import {
   createOwnedStore,
@@ -16,6 +16,10 @@ import type { OwnedBySpecies, OwnedRow } from './owned.ts'
 
 function pal(speciesIndex: number, passives: string[] = [], gender: GenderCode | null = 'F'): OwnedPal {
   return { speciesIndex, gender, passives, talents: null }
+}
+
+function passive(id: string, rank: number): PassiveRecord {
+  return { id, name: id, rank, randomAllowed: true, randomWeight: 100, standard: true }
 }
 
 function result(owned: OwnedPal[], warnings: string[] = [], playerRows = 1): ImportResult {
@@ -89,7 +93,7 @@ describe('owned store', () => {
     expect(store.getState().playerRows).toBe(0)
   })
 
-  it('caps stored individuals per species, keeping the ones with the most passives', () => {
+  it('caps stored individuals per species as a clean breeding portfolio', () => {
     const store = createOwnedStore()
     const many = [0, 1, 2, 3, 4, 2, 1].map((n, i) => pal(9, Array.from({ length: n }, (_, k) => `p${i}-${k}`)))
     store.getState().setOwned(result(many), 'Level.sav')
@@ -98,14 +102,33 @@ describe('owned store', () => {
     // The count is exact even though the examples are capped - the cap bounds storage, not truth.
     expect(entry.count).toBe(7)
     expect(entry.individuals).toHaveLength(MAX_STORED_INDIVIDUALS)
-    expect(entry.individuals.map((i) => i.passives.length)).toEqual([4, 3, 2, 2, 1])
+    expect(entry.individuals.map((i) => i.passives.length)).toEqual([0, 1, 1, 2, 2])
+  })
+
+  it('covers distinct elite passives before taking duplicate carriers', () => {
+    const store = createOwnedStore()
+    const records = [passive('Lucky', 4), passive('Legend', 4), passive('Artisan', 3), passive('Bad', -1)]
+    const many = [
+      pal(9, [], 'F'),
+      pal(9, [], 'M'),
+      pal(9, ['Lucky', 'Bad'], 'F'),
+      pal(9, ['Lucky'], 'M'),
+      pal(9, ['Legend', 'Bad'], 'F'),
+      pal(9, ['Artisan'], 'M'),
+      pal(9, ['Bad'], 'F'),
+    ]
+    store.getState().setOwned(result(many), 'Level.sav', records)
+
+    const kept = store.getState().bySpecies[9].individuals.map((individual) => individual.passives)
+    expect(kept).toContainEqual([])
+    expect(kept).toContainEqual(['Lucky'])
+    expect(kept).toContainEqual(['Legend', 'Bad'])
   })
 
   it('tallies genders over every pal, not over the individuals it kept', () => {
-    // The bug this whole design exists to prevent. Six of one species: five males carrying passives,
-    // and the only female carrying none — so she sorts last and falls off the end of the capped
-    // sample. A tally derived from `individuals` would report zero females and tell the player to
-    // go breed a pair that does not exist.
+    // Six of one species: five males carrying passives, and the only female carrying none. The
+    // portfolio now keeps that especially useful clean female, while the exact tally still remains
+    // independent of whichever examples fit under the cap.
     const store = createOwnedStore()
     const males = [1, 2, 3, 4, 5].map((n) => pal(9, Array.from({ length: n }, (_, k) => `m${n}-${k}`), 'M'))
     store.getState().setOwned(result([...males, pal(9, [], 'F')]), 'Level.sav')
@@ -113,8 +136,7 @@ describe('owned store', () => {
     const entry = store.getState().bySpecies[9]
     expect(entry.count).toBe(6)
     expect(entry.individuals).toHaveLength(MAX_STORED_INDIVIDUALS)
-    // The sample really is all-male — the tally is not reading it.
-    expect(entry.individuals.map((i) => i.gender)).toEqual(['M', 'M', 'M', 'M', 'M'])
+    expect(entry.individuals.map((i) => i.gender)).toEqual(['F', 'M', 'M', 'M', 'M'])
     expect(entry.genders).toEqual({ males: 5, females: 1 })
     // And so the species is not flagged unbreedable, which the sample alone would have claimed.
     expect(onlyGender(entry.count, entry.genders)).toBeNull()

@@ -4,7 +4,6 @@ import { ComboTable } from './ComboTable.tsx'
 import { specialRowsFor } from './combo-rows.ts'
 import type { SpecialComboSort } from './combo-rows.ts'
 
-const FRONT_PAGE_COMBO_COUNT = 10
 const SORT_DESCRIPTIONS: Record<SpecialComboSort, string> = {
   'breeding-rank': 'Lowest offspring breeding rank first.',
   'rank-jump': 'Largest rank improvement over the stronger parent first.',
@@ -18,14 +17,14 @@ const SORT_DESCRIPTIONS: Record<SpecialComboSort, string> = {
 export function SpecialCombos() {
   const ds = useDataset()
   const [sort, setSort] = useState<SpecialComboSort>('breeding-rank')
-  const rows = useMemo(() => specialRowsFor(ds, sort, FRONT_PAGE_COMBO_COUNT), [ds, sort])
+  const rows = useMemo(() => specialRowsFor(ds, sort), [ds, sort])
 
   return (
     <section className="special-combos" aria-labelledby="special-combos-title">
       <div className="special-combos-head">
         <div className="special-combos-title">
           <h2 id="special-combos-title">SPECIAL COMBINATIONS</h2>
-          <span className="label-caps">TOP {rows.length}</span>
+          <span className="label-caps">{rows.length} RECIPES</span>
         </div>
         <div className="special-combos-controls">
           <p>{SORT_DESCRIPTIONS[sort]}</p>

@@ -12,7 +12,7 @@ export const MODE_TABS: Record<Mode, TabId[]> = {
 export const TAB_LABELS: Record<TabId, string> = {
   child: 'CHILD',
   mutations: 'MUTATIONS',
-  'passive-odds': 'PASSIVE ODDS',
+  'passive-odds': 'PASSIVE PLAN',
   'all-a-combos': 'ALL A-COMBOS',
   'parent-combos': 'PARENT COMBOS',
   'via-mutation': 'VIA MUTATION',

@@ -519,7 +519,7 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
             unreadable.length === 0
               ? data.result
               : { ...data.result, warnings: [...data.result.warnings, ...unreadable] }
-          setOwned(result, sourceLabelOf(label, data.result.sources))
+          setOwned(result, sourceLabelOf(label, data.result.sources), ds.passives)
           // Only when nobody looked. A walked save folder with no `_dps.sav` in it is the normal
           // case — most players never build the storage — and saying anything there would turn a
           // complete import into a nagging one.
@@ -547,7 +547,7 @@ export function ImportPanel({ shareBlob = null, dropReady = false, onClose }: Im
         setState({ status: 'error', code: 'timeout', detail: `${label} was still parsing after 60 seconds`, label })
       }, TIMEOUT_MS)
     },
-    [abortInFlight, byIdLower, clearTimer, setOwned],
+    [abortInFlight, byIdLower, clearTimer, ds.passives, setOwned],
   )
 
   const ingest = useCallback(

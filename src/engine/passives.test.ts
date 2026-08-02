@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { passiveOdds } from './passives.ts'
+import { attemptEstimate, exactPassiveOdds, passiveOdds } from './passives.ts'
 
 describe('passiveOdds', () => {
   it('is certain when nothing is wanted', () => {
@@ -29,5 +29,26 @@ describe('passiveOdds', () => {
   it('gets harder as the parents carry more junk', () => {
     expect(passiveOdds(6, 1)).toBeLessThan(passiveOdds(2, 1))
     expect(passiveOdds(10, 2)).toBeLessThan(passiveOdds(4, 2))
+  })
+})
+
+describe('exactPassiveOdds', () => {
+  it('requires exactly the desired inherited count', () => {
+    expect(exactPassiveOdds(4, 1)).toBeCloseTo(0.4 / 4, 12)
+    expect(exactPassiveOdds(4, 2)).toBeCloseTo(0.3 / 6, 12)
+    expect(exactPassiveOdds(4, 4)).toBe(0.1)
+  })
+
+  it('rejects an empty or impossible clean set', () => {
+    expect(exactPassiveOdds(4, 0)).toBe(0)
+    expect(exactPassiveOdds(3, 4)).toBe(0)
+  })
+})
+
+describe('attemptEstimate', () => {
+  it('shows both the average and a tail-aware egg count', () => {
+    expect(attemptEstimate(0.1)).toEqual({ average: 10, p90: 22 })
+    expect(attemptEstimate(1)).toEqual({ average: 1, p90: 1 })
+    expect(attemptEstimate(0)).toBeNull()
   })
 })
