@@ -53,7 +53,9 @@ function show(rows: ComboRow[], cap?: number) {
 
 function bodyRows(): HTMLElement[] {
   const table = screen.getByRole('table')
-  return within(table).getAllByRole('row').slice(1) // drop the header row
+  // These assertions count the rows rendered by filtering/pagination. Avoid
+  // walking computed visibility through every tile in this 300-row fixture.
+  return within(table).getAllByRole('row', { hidden: true }).slice(1) // drop the header row
 }
 
 describe('ComboTable', () => {
