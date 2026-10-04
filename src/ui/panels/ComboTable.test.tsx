@@ -77,7 +77,7 @@ describe('ComboTable', () => {
     show(rows)
     expect(bodyRows()).toHaveLength(rows.length)
 
-    fireEvent.change(screen.getByLabelText('filter combos by pal name'), { target: { value: 'foxparks' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'filter combos by pal name' }), { target: { value: 'foxparks' } })
 
     // Foxparks and Foxparks Cryst both survive — the filter is a substring, not an exact name.
     const narrowed = bodyRows()
@@ -89,7 +89,7 @@ describe('ComboTable', () => {
 
   it('matches the child cell too, wherever the child column is shown', () => {
     show(comboRowsFor(ds, idx('Lamball')))
-    fireEvent.change(screen.getByLabelText('filter combos by pal name'), { target: { value: 'lifmunk' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'filter combos by pal name' }), { target: { value: 'lifmunk' } })
 
     // Lamball × Lifmunk qualifies on a parent; Lamball × Fuack → Lifmunk on its child alone, and
     // dropping that row would be hiding the answer to "what makes a Lifmunk".
@@ -105,7 +105,7 @@ describe('ComboTable', () => {
 
     // Every row here makes Relaxaurus Lux, but no row shows it as a child, so the name only hits
     // the two rows that carry it as a parent.
-    fireEvent.change(screen.getByLabelText('filter combos by pal name'), { target: { value: 'relaxaurus lux' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'filter combos by pal name' }), { target: { value: 'relaxaurus lux' } })
     expect(bodyRows()).toHaveLength(1)
   })
 
@@ -126,7 +126,7 @@ describe('ComboTable', () => {
     expect(screen.getByText('CHILD')).toBeTruthy()
 
     // Lamball breeds *into* Foxparks as well as with it, so narrow to a single row first.
-    fireEvent.change(screen.getByLabelText('filter combos by pal name'), { target: { value: 'foxparks cryst' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'filter combos by pal name' }), { target: { value: 'foxparks cryst' } })
     const rows = bodyRows()
     expect(rows).toHaveLength(1)
     fireEvent.click(within(rows[0]).getByLabelText('set as Parent B (Foxparks Cryst)'))
@@ -149,7 +149,7 @@ describe('ComboTable', () => {
   it('offers no OWNED ONLY chip to a player who has imported nothing', () => {
     show(comboRowsFor(ds, idx('Lamball')))
     expect(screen.queryByText('OWNED ONLY')).toBeNull()
-    expect(screen.queryAllByLabelText('owned')).toHaveLength(0)
+    expect(screen.queryAllByRole('img', { name: 'owned' })).toHaveLength(0)
   })
 
   it('narrows to pairs whose parents are both owned, and composes with the name filter', () => {
@@ -168,7 +168,7 @@ describe('ComboTable', () => {
 
     // Foxparks Cryst matches the name filter and is not owned, so the two filters intersect
     // rather than either one winning.
-    fireEvent.change(screen.getByLabelText('filter combos by pal name'), { target: { value: 'foxparks' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'filter combos by pal name' }), { target: { value: 'foxparks' } })
     const narrowed = bodyRows()
     expect(narrowed).toHaveLength(1)
     expect(narrowed[0].textContent).toContain('Foxparks')
@@ -190,7 +190,7 @@ describe('ComboTable', () => {
     own('Lamball', 'Foxparks Cryst')
     show(comboRowsFor(ds, idx('Lamball')))
 
-    fireEvent.change(screen.getByLabelText('filter combos by pal name'), { target: { value: 'foxparks cryst' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'filter combos by pal name' }), { target: { value: 'foxparks cryst' } })
     const rows = bodyRows()
     expect(rows).toHaveLength(1)
     // Both parents carry a tick; the child of the pair is some third pal nobody owns.
