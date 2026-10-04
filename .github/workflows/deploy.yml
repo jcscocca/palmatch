@@ -17,14 +17,33 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, thinkpad]
+    defaults:
+      run:
+        working-directory: work/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index || 0 }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: work/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index || 0 }}
+          clean: true
 
+      # Each registration has its own _work root; each job checks out a fresh subdirectory.
+      # GitHub Runner cleans RUNNER_TEMP and terminates processes carrying this job's tracking ID.
+      - name: Isolate Linux job environment
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          job_tmp="$RUNNER_TEMP/ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$GITHUB_JOB"
+          mkdir -p "$job_tmp" "$HOME/.cache"
+          printf 'TMPDIR=%s\nTMP=%s\nTEMP=%s\n' "$job_tmp" "$job_tmp" "$job_tmp" >> "$GITHUB_ENV"
+          # Do not accidentally invoke Windows executables through WSL interop.
+          linux_path=$(printf '%s' "$PATH" | tr ':' '\n' | sed '/^\/mnt\/[a-zA-Z]\//d' | paste -sd:)
+          echo "PATH=$linux_path" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: work/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index || 0 }}/package-lock.json
 
       - run: npm ci
       - run: npm test
@@ -33,11 +52,11 @@ jobs:
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: work/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index || 0 }}/dist
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, thinkpad]
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
