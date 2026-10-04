@@ -64,7 +64,7 @@ jobs:
           cache-dependency-path: work/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index || 0 }}/package-lock.json
 
       - run: npm ci
-      - run: npm test
+      - run: npm test -- --maxWorkers=2
       - run: npm run build
 
       - uses: actions/configure-pages@v5
